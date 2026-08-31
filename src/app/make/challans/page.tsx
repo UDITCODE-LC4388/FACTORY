@@ -19,6 +19,8 @@ import {
   Camera,
   Trash2,
   Image as ImageIcon,
+  Download,
+  Eye,
 } from 'lucide-react';
 import { generateRoadChallanPDF } from '@/lib/pdf-generator';
 import { RoadChallan, JobWorkerProcess } from '@/types/database.types';
@@ -39,6 +41,7 @@ export default function RoadChallansPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'dispatched' | 'partially_returned' | 'completed'>('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [reconChallan, setReconChallan] = useState<RoadChallan | null>(null);
+  const [previewChallan, setPreviewChallan] = useState<RoadChallan | null>(null);
 
   // Form State: Create Road Challan
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
@@ -213,6 +216,15 @@ export default function RoadChallansPage() {
     if (confirm(`Are you sure you want to delete Road Challan ${challanNo}? This will also delete linked vendor records.`)) {
       deleteRoadChallan(id);
     }
+  };
+
+  const handlePrintTrigger = (ch: RoadChallan) => {
+    try {
+      generateRoadChallanPDF(ch, factory);
+    } catch (e) {
+      console.error(e);
+    }
+    setPreviewChallan(ch);
   };
 
   return (
@@ -400,11 +412,11 @@ export default function RoadChallansPage() {
                 {/* Actions */}
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
                   <button
-                    onClick={() => generateRoadChallanPDF(ch, factory)}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                    onClick={() => handlePrintTrigger(ch)}
+                    className="px-3.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white font-bold text-xs flex items-center gap-1.5 border border-blue-500/30 transition shadow-sm"
                   >
-                    <Printer className="h-3.5 w-3.5 text-blue-400" />
-                    <span>Print Challan PDF</span>
+                    <Printer className="h-3.5 w-3.5" />
+                    <span>Print Challan</span>
                   </button>
 
                   {ch.status !== 'completed' && (
@@ -780,6 +792,163 @@ export default function RoadChallansPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* MODAL 3: HIGH-RESOLUTION PRINTABLE CHALLAN VIEW & PRINT TRIGGER */}
+      {/* ------------------------------------------------------------------ */}
+      {previewChallan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-3xl max-h-[95vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col">
+            {/* Top Toolbar */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/80">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Road Challan Print Preview — {previewChallan.challan_no}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>Print (System / Thermal)</span>
+                </button>
+                <button
+                  onClick={() => generateRoadChallanPDF(previewChallan, factory)}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  onClick={() => setPreviewChallan(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Document Paper Area */}
+            <div className="p-6 overflow-y-auto bg-slate-950 flex justify-center">
+              <div className="w-full max-w-2xl bg-white text-slate-900 p-8 rounded-xl shadow-2xl space-y-6 text-xs border border-slate-300 font-sans print:p-0 print:border-0 print:shadow-none">
+                {/* Header */}
+                <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-extrabold tracking-tight text-slate-900">
+                      {factory.name || 'Manisha Garments'}
+                    </h2>
+                    <p className="text-[11px] text-slate-600 mt-0.5">{factory.address || 'Industrial Area Unit'}</p>
+                    <p className="text-[11px] text-slate-600">
+                      GSTIN: <strong>{factory.gstin || '27AAAAA0000A1Z5'}</strong> &bull; State: {factory.state} ({factory.state_code})
+                    </p>
+                    <p className="text-[11px] text-slate-600">Phone: {factory.phone || '+91 98000 00000'}</p>
+                  </div>
+
+                  <div className="text-right bg-slate-100 p-3 rounded-lg border border-slate-300">
+                    <span className="font-extrabold text-slate-900 text-sm block">JOB-WORK ROAD CHALLAN</span>
+                    <p className="font-mono font-bold text-slate-800 mt-1">Challan: {previewChallan.challan_no}</p>
+                    <p className="text-slate-600">Date: {previewChallan.challan_date}</p>
+                    <p className="text-slate-600 uppercase font-semibold">
+                      Process: {previewChallan.process_type.replace(/_/g, ' ')}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Job Worker Block */}
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <span className="font-bold text-slate-900 block text-[11px] uppercase tracking-wider mb-1">
+                    Job Worker / Consignee:
+                  </span>
+                  <p className="font-bold text-sm text-slate-900">{previewChallan.job_worker?.name || 'Assigned Vendor'}</p>
+                  <p className="text-slate-600">{previewChallan.job_worker?.address || 'Premises address on file'}</p>
+                  <p className="text-slate-600">Phone: {previewChallan.job_worker?.phone || '—'}</p>
+                </div>
+
+                {/* Outbound Dispatch Lots Table */}
+                <div>
+                  <h4 className="font-bold text-slate-900 mb-2 uppercase text-[11px] tracking-wider">
+                    Outbound Dispatch Particulars:
+                  </h4>
+                  <table className="w-full border-collapse border border-slate-300 text-xs">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-bold">
+                        <th className="border border-slate-300 p-2 text-left">#</th>
+                        <th className="border border-slate-300 p-2 text-left">Lot / Batch</th>
+                        <th className="border border-slate-300 p-2 text-left">Article / Style</th>
+                        <th className="border border-slate-300 p-2 text-left">Colour</th>
+                        <th className="border border-slate-300 p-2 text-left">Size Breakdown</th>
+                        <th className="border border-slate-300 p-2 text-right">Sent Qty</th>
+                        <th className="border border-slate-300 p-2 text-right">Rate</th>
+                        <th className="border border-slate-300 p-2 text-right">Appx Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(previewChallan.lots || []).map((lot, idx) => {
+                        const lotTotal = lot.sizes.reduce((sum, s) => sum + s.dispatched_qty, 0);
+                        const sizeStr = lot.sizes.map((s) => `${s.size}:${s.dispatched_qty}`).join(', ');
+                        return (
+                          <tr key={lot.id} className="border-b border-slate-300">
+                            <td className="border border-slate-300 p-2">{idx + 1}</td>
+                            <td className="border border-slate-300 p-2 font-mono font-bold">{lot.lot_no}</td>
+                            <td className="border border-slate-300 p-2 font-bold">{lot.article}</td>
+                            <td className="border border-slate-300 p-2">{lot.color}</td>
+                            <td className="border border-slate-300 p-2 font-mono">{sizeStr}</td>
+                            <td className="border border-slate-300 p-2 text-right font-bold">{lotTotal} Pcs</td>
+                            <td className="border border-slate-300 p-2 text-right">
+                              {lot.rate_per_pc ? `₹${lot.rate_per_pc}` : '—'}
+                            </td>
+                            <td className="border border-slate-300 p-2 text-right font-bold">
+                              {lot.rate_per_pc ? `₹${lotTotal * lot.rate_per_pc}` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Attached Photo if available */}
+                {previewChallan.photo_url && (
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-4">
+                    <img
+                      src={previewChallan.photo_url}
+                      alt="Sample"
+                      className="w-20 h-20 rounded-lg object-cover border border-slate-300"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-900 block">Sample / Product Specification Photo Attached</span>
+                      <p className="text-slate-600 text-[11px] mt-0.5">Physical garment sample reference for processing unit.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Terms */}
+                <div className="text-[10px] text-slate-500 space-y-0.5 pt-2 border-t border-slate-200">
+                  <p>1. Goods dispatched strictly for job work processing and remain the absolute property of the sender.</p>
+                  <p>2. Job worker is responsible for piece count reconciliation. Any shortage beyond 1% will be debited.</p>
+                </div>
+
+                {/* Signature Blocks */}
+                <div className="pt-8 flex justify-between items-end text-slate-800 text-[11px]">
+                  <div className="text-center">
+                    <div className="w-40 border-t border-slate-400 pt-1">Prepared / Dispatched By</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="w-48 border-t border-slate-400 pt-1">Job Worker Signature & Stamp</div>
+                  </div>
+                  <div className="text-center font-bold">
+                    <div className="w-40 border-t border-slate-400 pt-1">For {factory.name || 'Company'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

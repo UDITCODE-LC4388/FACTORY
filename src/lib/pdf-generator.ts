@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import {
   Invoice,
   Party,
@@ -12,75 +12,66 @@ import {
 import { formatINR } from './gst';
 import QRCode from 'qrcode';
 
-// Extend jsPDF interface for autoTable
-interface jsPDFCustom extends jsPDF {
-  autoTable: (options: unknown) => jsPDFCustom;
-  lastAutoTable?: {
-    finalY: number;
-  };
-}
-
 /**
- * Helper to trigger both native browser printer popup AND reliable file download
+ * Universal safe helper to download and preview PDF in browser
  */
 export function printOrDownloadPDF(doc: jsPDF, filename: string) {
+  if (typeof window === 'undefined') return;
+
   try {
-    // 1. Direct PDF Download
-    doc.save(filename);
+    const blob = doc.output('blob');
+    const blobUrl = URL.createObjectURL(blob);
 
-    // 2. Also open native browser print dialog via blob iframe if in browser
-    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-      const blob = doc.output('blob');
-      const blobUrl = URL.createObjectURL(blob);
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      iframe.src = blobUrl;
-      document.body.appendChild(iframe);
+    // 1. Trigger reliable download link
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
-      iframe.onload = () => {
-        setTimeout(() => {
-          try {
-            iframe.focus();
-            iframe.contentWindow?.print();
-          } catch {
-            // ignore
-          }
-        }, 300);
-      };
+    // 2. Open in new window for direct print preview
+    const printWindow = window.open(blobUrl, '_blank');
+    if (printWindow) {
+      printWindow.focus();
     }
   } catch (err) {
-    doc.save(filename);
+    console.error('PDF generation error, attempting fallback save:', err);
+    try {
+      doc.save(filename);
+    } catch (saveErr) {
+      console.error('Fallback save failed:', saveErr);
+      alert('Unable to generate PDF. Please ensure popups are allowed or use the print preview.');
+    }
   }
 }
 
 /**
  * 1. Road Challan (Job-Work Delivery Challan) PDF Generator
- * Traditional layout matching Indian garment job-work challan paper format + Photo support
  */
 export async function generateRoadChallanPDF(
   challan: RoadChallan,
   factory: Factory,
   jobWorker?: JobWorker
 ): Promise<void> {
-  const doc = new jsPDF() as jsPDFCustom;
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
 
   // Header Banner
   doc.setFillColor(15, 23, 42); // Slate-900
   doc.rect(0, 0, 210, 26, 'F');
 
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
+  doc.setFontSize(15);
   doc.setFont('helvetica', 'bold');
   doc.text('JOB-WORK DELIVERY CHALLAN (ROAD CHALLAN)', 14, 17);
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.text('FOR OUTSIDE PROCESSING & RETURN', 140, 17);
+  doc.text('OUTSIDE PROCESSING SLIP', 150, 17);
 
   // Company / Factory Details
   doc.setTextColor(15, 23, 42);
@@ -93,7 +84,7 @@ export async function generateRoadChallanPDF(
   doc.setTextColor(71, 85, 105);
   doc.text(factory.address || 'Factory Unit, Industrial Area', 14, 41);
   doc.text(
-    `GSTIN: ${factory.gstin || '27AAAAA0000A1Z5'} | State: ${factory.state} (${factory.state_code})`,
+    `GSTIN: ${factory.gstin || '27AAAAA0000A1Z5'} | State: ${factory.state || 'Maharashtra'} (${factory.state_code || '27'})`,
     14,
     46
   );
@@ -112,9 +103,10 @@ export async function generateRoadChallanPDF(
   doc.setFont('helvetica', 'normal');
   doc.text(`Date: ${challan.challan_date}`, 129, 42);
   doc.text(`Process: ${(challan.process_type || 'Job Work').toUpperCase().replace(/_/g, ' ')}`, 129, 48);
-  doc.text(`Status: ${challan.status.toUpperCase()}`, 129, 54);
+  doc.text(`Status: ${(challan.status || 'Dispatched').toUpperCase().replace(/_/g, ' ')}`, 129, 54);
 
   // Job Worker / Vendor Details Block
+  doc.setDrawColor(226, 232, 240);
   doc.line(14, 60, 196, 60);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -133,10 +125,10 @@ export async function generateRoadChallanPDF(
   const dispatchRows: Array<Array<string | number>> = [];
 
   (challan.lots || []).forEach((lot, lIdx) => {
-    const sizeBreakdown = lot.sizes
+    const sizeBreakdown = (lot.sizes || [])
       .map((s) => `${s.size}:${s.dispatched_qty}`)
       .join(', ');
-    const lotTotal = lot.sizes.reduce((sum, s) => sum + s.dispatched_qty, 0);
+    const lotTotal = (lot.sizes || []).reduce((sum, s) => sum + (Number(s.dispatched_qty) || 0), 0);
     totalDispatched += lotTotal;
 
     dispatchRows.push([
@@ -146,12 +138,12 @@ export async function generateRoadChallanPDF(
       lot.color,
       sizeBreakdown || 'All Sizes',
       `${lotTotal} Pcs`,
-      lot.rate_per_pc > 0 ? `Rs. ${lot.rate_per_pc}` : '—',
-      lot.rate_per_pc > 0 ? `Rs. ${lotTotal * lot.rate_per_pc}` : '—',
+      lot.rate_per_pc && lot.rate_per_pc > 0 ? `Rs. ${lot.rate_per_pc}` : '—',
+      lot.rate_per_pc && lot.rate_per_pc > 0 ? `Rs. ${lotTotal * lot.rate_per_pc}` : '—',
     ]);
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: 88,
     head: [
       [
@@ -189,23 +181,23 @@ export async function generateRoadChallanPDF(
     },
   });
 
-  let currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : 140;
+  let currentY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : 140;
 
   // Attached Product Photo if present
-  if (challan.photo_url) {
+  if (challan.photo_url && challan.photo_url.startsWith('data:image')) {
     try {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
       doc.text('Attached Product / Sample Photo:', 14, currentY);
-      doc.addImage(challan.photo_url, 'JPEG', 14, currentY + 3, 35, 35);
-      currentY += 42;
+      doc.addImage(challan.photo_url, 'JPEG', 14, currentY + 3, 30, 30);
+      currentY += 36;
     } catch {
       // ignore
     }
   }
 
-  // Inbound Return Reconciliation Table (If returned or partially returned)
+  // Inbound Return Reconciliation Table
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
@@ -213,7 +205,7 @@ export async function generateRoadChallanPDF(
 
   const reconRows: Array<Array<string | number>> = [];
   (challan.lots || []).forEach((lot) => {
-    lot.sizes.forEach((s) => {
+    (lot.sizes || []).forEach((s) => {
       const returned = s.returned_qty !== null ? s.returned_qty : '—';
       const shortage =
         s.returned_qty !== null
@@ -236,7 +228,7 @@ export async function generateRoadChallanPDF(
     });
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: currentY + 4,
     head: [['Lot #', 'Article', 'Size', 'Dispatched Qty', 'Returned Qty', 'Shortage / Excess Delta']],
     body: reconRows.length > 0 ? reconRows : [['LOT-01', 'Article 01', 'All', `${totalDispatched || 200} Pcs`, 'Pending Return', 'Pending Return']],
@@ -249,7 +241,7 @@ export async function generateRoadChallanPDF(
     bodyStyles: { fontSize: 8 },
   });
 
-  currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 210;
+  currentY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 10 : 210;
 
   // Terms & Conditions
   doc.setFontSize(7.5);
@@ -291,7 +283,11 @@ export async function generateInvoicePDF(
   factory: Factory,
   party: Party
 ): Promise<void> {
-  const doc = new jsPDF() as jsPDFCustom;
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
 
   // Header Banner
   doc.setFillColor(30, 41, 59); // Slate-800
@@ -334,6 +330,7 @@ export async function generateInvoicePDF(
   doc.text(`Payment: ${invoice.payment_status.toUpperCase()}`, 134, 55);
 
   // Bill To (Party / Customer Details)
+  doc.setDrawColor(226, 232, 240);
   doc.line(14, 62, 196, 62);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -359,7 +356,7 @@ export async function generateInvoicePDF(
     formatINR(item.total),
   ]);
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: 90,
     head: [['#', 'Description', 'HSN/SAC', 'Qty', 'Rate', 'Taxable', 'GST %', 'Tax Amt', 'Total']],
     body: tableData,
@@ -387,7 +384,7 @@ export async function generateInvoicePDF(
     },
   });
 
-  const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 180;
+  const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 10 : 180;
 
   // Tax Summary Box
   doc.setFillColor(248, 250, 252);
@@ -440,7 +437,11 @@ export async function generateJobCardPDF(
   job?: ProductionJob,
   factory?: Factory
 ): Promise<void> {
-  const doc = new jsPDF() as jsPDFCustom;
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
 
   // Header
   doc.setFillColor(30, 41, 59);
@@ -479,7 +480,7 @@ export async function generateJobCardPDF(
 
   // Size Line Matrix
   const sizeData = (batch.size_lines || []).map((s) => [s.colour || batch.colour, s.size, `${s.qty} Pcs`]);
-  doc.autoTable({
+  autoTable(doc, {
     startY: 84,
     head: [['Colour', 'Size', 'Cut Quantity']],
     body: sizeData.length > 0 ? sizeData : [[batch.colour || 'Standard', 'Standard', `${batch.initial_qty} Pcs`]],
@@ -487,7 +488,7 @@ export async function generateJobCardPDF(
     headStyles: { fillColor: [71, 85, 105], textColor: 255, fontSize: 9 },
   });
 
-  const nextY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 130;
+  const nextY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 10 : 130;
 
   // Stage Tracking Sign-off Grid (All 7 Stages)
   doc.setFont('helvetica', 'bold');
@@ -504,7 +505,7 @@ export async function generateJobCardPDF(
     ['7. Dispatch', 'In-House', '', '', '', '', ''],
   ];
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: nextY + 4,
     head: [['Stage', 'Dept/Vendor', 'Sent Qty', 'Scrap', 'Recv Qty', 'Operator Sign', 'QC Stamp']],
     body: stageGrid,

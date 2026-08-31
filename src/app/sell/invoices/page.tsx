@@ -16,6 +16,7 @@ import {
   Eye,
   X,
   Trash2,
+  Printer,
 } from 'lucide-react';
 import { Invoice } from '@/types/database.types';
 
@@ -31,7 +32,7 @@ export default function InvoicesPage() {
   } = useFactory();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
 
   // Payment Recording State
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<Invoice | null>(null);
@@ -61,6 +62,7 @@ export default function InvoicesPage() {
       amount: Number(paymentAmount),
       mode: paymentMode,
       reference_no: paymentRef,
+      notes: 'Recorded against invoice',
     });
 
     setPaymentModalInvoice(null);
@@ -70,11 +72,11 @@ export default function InvoicesPage() {
 
   const handleSendWhatsApp = async (inv: Invoice) => {
     const party = parties.find((p) => p.id === inv.party_id) || inv.party;
-    if (!party) return;
-    const msg = `Namaste ${party.name}, Tax Invoice #${inv.number} for ${formatINR(
-      inv.total
-    )} has been raised by ${factory.name}. View/Download PDF: ${inv.pdf_url || 'Sent via FactoryOS'}`;
-    const res = await sendWhatsAppNotification(party.phone, party.name, msg, 'invoices', inv.id);
+    const phone = party?.phone || '+91 98000 00000';
+    const partyName = party?.name || 'Valued Customer';
+    const message = `Hello ${partyName},\n\nYour GST Tax Invoice *#${inv.number}* for *${formatINR(inv.total)}* from ${factory.name} is ready.\n\nDate: ${inv.date}\nPayment Status: ${inv.payment_status.toUpperCase()}\n\nThank you for doing business with us!`;
+
+    const res = await sendWhatsAppNotification(phone, partyName, message, 'invoices', inv.id);
     if (res.directUrl) {
       window.open(res.directUrl, '_blank');
     }
@@ -88,11 +90,11 @@ export default function InvoicesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <FileText className="h-6 w-6 text-blue-400" />
-            GST Tax Invoices
+            <CreditCard className="h-6 w-6 text-blue-400" />
+            GST Tax Invoices & Receivables
           </h1>
           <p className="text-xs sm:text-sm text-slate-400">
-            GST-correct financial invoices with intra/interstate tax splits and piece-level ledger deduction
+            Compliant B2B / B2C tax invoices, automatic CGST/SGST/IGST calculation & receipt ledger
           </p>
         </div>
       </div>
@@ -102,33 +104,34 @@ export default function InvoicesPage() {
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
         <input
           type="text"
-          placeholder="Search invoices by invoice #, customer name..."
+          placeholder="Search by Invoice # or Customer name..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
-      {/* Invoices List */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur overflow-hidden">
+      {/* Invoices Table */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 overflow-hidden backdrop-blur">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-850/80 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              <tr>
-                <th className="py-3.5 px-4">Invoice # / Date</th>
-                <th className="py-3.5 px-4">Customer Party</th>
-                <th className="py-3.5 px-4">Taxable Value</th>
-                <th className="py-3.5 px-4">GST Tax Breakdown</th>
-                <th className="py-3.5 px-4">Grand Total</th>
-                <th className="py-3.5 px-4">Payment Status</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-800 bg-slate-850/50 text-slate-400 font-semibold">
+                <th className="py-3 px-4">Invoice #</th>
+                <th className="py-3 px-4">Date</th>
+                <th className="py-3 px-4">Customer</th>
+                <th className="py-3 px-4">Taxable</th>
+                <th className="py-3 px-4">GST</th>
+                <th className="py-3 px-4">Total Amount</th>
+                <th className="py-3 px-4">Payment</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-800">
               {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-500 text-xs">
-                    No invoices generated yet. Convert a Sale Order to generate an invoice.
+                  <td colSpan={8} className="py-12 text-center text-slate-500 text-xs">
+                    No tax invoices generated yet. Convert orders from &ldquo;Sale Orders&rdquo; tab to create invoices.
                   </td>
                 </tr>
               ) : (
@@ -136,28 +139,26 @@ export default function InvoicesPage() {
                   const party = parties.find((p) => p.id === inv.party_id) || inv.party;
                   return (
                     <tr key={inv.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-3.5 px-4 font-semibold text-white">
-                        <div className="flex flex-col">
-                          <span className="font-mono text-blue-400">{inv.number}</span>
-                          <span className="text-[11px] text-slate-400 font-normal">
-                            {inv.date} &bull; {inv.sale_type.toUpperCase()}
-                          </span>
-                        </div>
+                      <td className="py-3.5 px-4 font-mono font-bold text-blue-400">
+                        {inv.number}
                       </td>
-                      <td className="py-3.5 px-4 font-medium text-white">
+                      <td className="py-3.5 px-4 text-slate-300 font-mono">
+                        {inv.date}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-white">
                         <div>
                           <span>{party?.name || 'Customer'}</span>
                           <p className="text-[11px] text-slate-400 font-normal">
-                            {party?.state} ({party?.gstin || 'Unregistered'})
+                            {party?.state} (GST: {party?.gstin || 'None'})
                           </p>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 font-medium text-slate-200">
+                      <td className="py-3.5 px-4 font-mono text-slate-300">
                         {formatINR(inv.taxable_amount)}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-300">
+                      <td className="py-3.5 px-4">
                         {inv.cgst > 0 || inv.sgst > 0 ? (
-                          <div className="flex flex-col text-[11px]">
+                          <div className="flex flex-col text-[10px] font-mono text-slate-400">
                             <span>CGST: {formatINR(inv.cgst)}</span>
                             <span>SGST: {formatINR(inv.sgst)}</span>
                           </div>
@@ -191,11 +192,14 @@ export default function InvoicesPage() {
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
-                            onClick={() => handleDownloadPDF(inv)}
+                            onClick={() => {
+                              handleDownloadPDF(inv);
+                              setPreviewInvoice(inv);
+                            }}
                             className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 transition"
-                            title="Download Tax Invoice PDF"
+                            title="Print / Download Tax Invoice PDF"
                           >
-                            <Download className="h-3.5 w-3.5" />
+                            <Printer className="h-3.5 w-3.5" />
                           </button>
                           {canRecordPayment && inv.payment_status !== 'paid' && (
                             <button
@@ -239,14 +243,14 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Payment Recording Modal */}
+      {/* Modal 1: Payment Recording */}
       {paymentModalInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/50">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <CreditCard className="h-4 w-4 text-emerald-400" />
-                Record Customer Payment (Payment-In)
+                Record Payment Received (Payment-In)
               </h3>
               <button
                 onClick={() => setPaymentModalInvoice(null)}
@@ -317,6 +321,160 @@ export default function InvoicesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Invoice Print Preview */}
+      {previewInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-3xl max-h-[95vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/80">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Tax Invoice Preview — {previewInvoice.number}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>Print (System)</span>
+                </button>
+                <button
+                  onClick={() => handleDownloadPDF(previewInvoice)}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  onClick={() => setPreviewInvoice(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Invoice White Paper */}
+            <div className="p-6 overflow-y-auto bg-slate-950 flex justify-center">
+              <div className="w-full max-w-2xl bg-white text-slate-900 p-8 rounded-xl shadow-2xl space-y-6 text-xs border border-slate-300 font-sans">
+                {/* Header */}
+                <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-extrabold tracking-tight text-slate-900">
+                      {factory.name || 'Manisha Garments'}
+                    </h2>
+                    <p className="text-[11px] text-slate-600 mt-0.5">{factory.address || 'Industrial Area Unit'}</p>
+                    <p className="text-[11px] text-slate-600">
+                      GSTIN: <strong>{factory.gstin || '27AAAAA0000A1Z5'}</strong> &bull; State: {factory.state} ({factory.state_code})
+                    </p>
+                    <p className="text-[11px] text-slate-600">Phone: {factory.phone || '+91 98000 00000'}</p>
+                  </div>
+
+                  <div className="text-right bg-slate-100 p-3 rounded-lg border border-slate-300">
+                    <span className="font-extrabold text-slate-900 text-sm block">TAX INVOICE</span>
+                    <p className="font-mono font-bold text-slate-800 mt-1">Invoice: {previewInvoice.number}</p>
+                    <p className="text-slate-600">Date: {previewInvoice.date}</p>
+                    <p className="text-slate-600 uppercase font-semibold">
+                      Payment: {previewInvoice.payment_status}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Customer Block */}
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <span className="font-bold text-slate-900 block text-[11px] uppercase tracking-wider mb-1">
+                    Billed To (Customer):
+                  </span>
+                  <p className="font-bold text-sm text-slate-900">{previewInvoice.party?.name || 'Customer Name'}</p>
+                  <p className="text-slate-600">{previewInvoice.party?.address || 'Address on file'}</p>
+                  <p className="text-slate-600">
+                    GSTIN: {previewInvoice.party?.gstin || 'UNREGISTERED'} &bull; State: {previewInvoice.party?.state} ({previewInvoice.party?.state_code})
+                  </p>
+                </div>
+
+                {/* Line Items Table */}
+                <div>
+                  <table className="w-full border-collapse border border-slate-300 text-xs">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-bold">
+                        <th className="border border-slate-300 p-2 text-left">#</th>
+                        <th className="border border-slate-300 p-2 text-left">Description</th>
+                        <th className="border border-slate-300 p-2 text-left">HSN</th>
+                        <th className="border border-slate-300 p-2 text-right">Qty</th>
+                        <th className="border border-slate-300 p-2 text-right">Rate</th>
+                        <th className="border border-slate-300 p-2 text-right">Taxable</th>
+                        <th className="border border-slate-300 p-2 text-center">GST</th>
+                        <th className="border border-slate-300 p-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(previewInvoice.items || []).map((it, idx) => (
+                        <tr key={it.id} className="border-b border-slate-300">
+                          <td className="border border-slate-300 p-2">{idx + 1}</td>
+                          <td className="border border-slate-300 p-2 font-bold">{it.description}</td>
+                          <td className="border border-slate-300 p-2 font-mono">{it.hsn_code}</td>
+                          <td className="border border-slate-300 p-2 text-right font-bold">{it.qty}</td>
+                          <td className="border border-slate-300 p-2 text-right">{formatINR(it.price)}</td>
+                          <td className="border border-slate-300 p-2 text-right">{formatINR(it.taxable_value)}</td>
+                          <td className="border border-slate-300 p-2 text-center">{it.gst_percent}%</td>
+                          <td className="border border-slate-300 p-2 text-right font-bold">{formatINR(it.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Total Summary */}
+                <div className="flex justify-end">
+                  <div className="w-64 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Taxable Amount:</span>
+                      <span>{formatINR(previewInvoice.taxable_amount)}</span>
+                    </div>
+                    {previewInvoice.cgst > 0 && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>CGST:</span>
+                        <span>{formatINR(previewInvoice.cgst)}</span>
+                      </div>
+                    )}
+                    {previewInvoice.sgst > 0 && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>SGST:</span>
+                        <span>{formatINR(previewInvoice.sgst)}</span>
+                      </div>
+                    )}
+                    {previewInvoice.igst > 0 && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>IGST:</span>
+                        <span>{formatINR(previewInvoice.igst)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t border-slate-300 pt-1.5">
+                      <span>Grand Total:</span>
+                      <span>{formatINR(previewInvoice.total)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Authorised Signatory */}
+                <div className="pt-8 flex justify-between items-end text-slate-800 text-[11px]">
+                  <div className="text-slate-500 text-[10px]">
+                    Thank you for your business. Terms apply.
+                  </div>
+                  <div className="text-center font-bold">
+                    <div className="w-48 border-t border-slate-400 pt-1">For {factory.name || 'Company'}</div>
+                    <span className="text-[10px] text-slate-500 font-normal">Authorised Signatory</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

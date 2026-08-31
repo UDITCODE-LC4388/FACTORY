@@ -18,9 +18,10 @@ import {
   Truck,
   Scissors,
   FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 import { generateJobCardPDF } from '@/lib/pdf-generator';
-import { FactoryStage } from '@/types/database.types';
+import { FactoryStage, ProductionBatch } from '@/types/database.types';
 import { STAGE_CONFIG, STAGE_ORDER } from '@/lib/reconciliation';
 import Link from 'next/link';
 
@@ -40,6 +41,7 @@ export default function BatchesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isMoveOpen, setIsMoveOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [previewJobCardBatch, setPreviewJobCardBatch] = useState<ProductionBatch | null>(null);
 
   // 100% Typable Batch Form State
   const [batchNo, setBatchNo] = useState('');
@@ -313,7 +315,14 @@ export default function BatchesPage() {
                 {/* Actions */}
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
                   <button
-                    onClick={() => generateJobCardPDF(batch, undefined, factory)}
+                    onClick={() => {
+                      try {
+                        generateJobCardPDF(batch, undefined, factory);
+                      } catch (e) {
+                        console.error(e);
+                      }
+                      setPreviewJobCardBatch(batch);
+                    }}
                     className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 border border-slate-700 transition"
                   >
                     <Printer className="h-3.5 w-3.5 text-blue-400" />
@@ -573,6 +582,154 @@ export default function BatchesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Job Card Print Preview Modal */}
+      {previewJobCardBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-3xl max-h-[95vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/80">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Job Card Print Preview — {previewJobCardBatch.batch_no}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>Print (System / Thermal)</span>
+                </button>
+                <button
+                  onClick={() => generateJobCardPDF(previewJobCardBatch, undefined, factory)}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  onClick={() => setPreviewJobCardBatch(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Job Card Paper */}
+            <div className="p-6 overflow-y-auto bg-slate-950 flex justify-center">
+              <div className="w-full max-w-2xl bg-white text-slate-900 p-8 rounded-xl shadow-2xl space-y-5 text-xs border border-slate-300 font-sans">
+                {/* Header */}
+                <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-extrabold tracking-tight text-slate-900">
+                      {factory.name || 'Manisha Garments'}
+                    </h2>
+                    <p className="text-[11px] text-slate-600">Factory Floor Route Traveler & Piece Job Card</p>
+                    <p className="text-sm font-black text-blue-900 mt-1 font-mono">BATCH: {previewJobCardBatch.batch_no}</p>
+                  </div>
+
+                  <div className="text-right bg-slate-100 p-3 rounded-lg border border-slate-300">
+                    <span className="font-extrabold text-slate-900 text-xs block">INITIAL LOT SIZE</span>
+                    <p className="text-xl font-black text-slate-900">{previewJobCardBatch.initial_qty} Pcs</p>
+                    <p className="text-slate-600 text-[10px] mt-0.5">Stage: {previewJobCardBatch.current_stage.toUpperCase()}</p>
+                  </div>
+                </div>
+
+                {/* Garment Details */}
+                <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase block">Style / Article</span>
+                    <p className="font-bold text-slate-900">{previewJobCardBatch.style || previewJobCardBatch.article_code}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase block">Colour</span>
+                    <p className="font-bold text-slate-900">{previewJobCardBatch.colour}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase block">Fabric / GSM</span>
+                    <p className="font-bold text-slate-900 truncate">{previewJobCardBatch.fabric || 'Single Jersey Cotton'}</p>
+                  </div>
+                </div>
+
+                {/* Size Breakdown */}
+                <div>
+                  <span className="text-[11px] font-bold text-slate-900 uppercase tracking-wider block mb-1">
+                    Cut Size Matrix:
+                  </span>
+                  <table className="w-full border-collapse border border-slate-300 text-xs">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-bold">
+                        <th className="border border-slate-300 p-1.5 text-left">Colour</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Size</th>
+                        <th className="border border-slate-300 p-1.5 text-right">Quantity (Pieces)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(previewJobCardBatch.size_lines || []).map((s, idx) => (
+                        <tr key={idx} className="border-b border-slate-300">
+                          <td className="border border-slate-300 p-1.5">{s.colour || previewJobCardBatch.colour}</td>
+                          <td className="border border-slate-300 p-1.5 font-bold font-mono">{s.size}</td>
+                          <td className="border border-slate-300 p-1.5 text-right font-bold">{s.qty} Pcs</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 7-Stage Route & Quality Sign-off Grid */}
+                <div>
+                  <span className="text-[11px] font-bold text-slate-900 uppercase tracking-wider block mb-1">
+                    Stage Route Tracking & Quality Sign-Off (All 7 Stages):
+                  </span>
+                  <table className="w-full border-collapse border border-slate-300 text-[10px]">
+                    <thead>
+                      <tr className="bg-slate-800 text-white font-bold">
+                        <th className="border border-slate-300 p-1 text-left">Stage</th>
+                        <th className="border border-slate-300 p-1 text-left">Dept / Vendor</th>
+                        <th className="border border-slate-300 p-1 text-right">Sent Qty</th>
+                        <th className="border border-slate-300 p-1 text-right">Scrap</th>
+                        <th className="border border-slate-300 p-1 text-right">Recv Qty</th>
+                        <th className="border border-slate-300 p-1 text-center">Operator Sign</th>
+                        <th className="border border-slate-300 p-1 text-center">QC Stamp</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        '1. Cutting',
+                        '2. Printing (Screen/Digital)',
+                        '3. Stitching / Making',
+                        '4. Quality Check (QC)',
+                        '5. Ironing / Pressing',
+                        '6. Packing',
+                        '7. Dispatch / Finished',
+                      ].map((stg, sIdx) => (
+                        <tr key={sIdx} className="border-b border-slate-300 h-8">
+                          <td className="border border-slate-300 p-1 font-bold">{stg}</td>
+                          <td className="border border-slate-300 p-1 text-slate-600">{sIdx === 0 ? 'In-House' : 'In-House / Jobwork'}</td>
+                          <td className="border border-slate-300 p-1 text-right font-bold">{sIdx === 0 ? previewJobCardBatch.initial_qty : ''}</td>
+                          <td className="border border-slate-300 p-1 text-right"></td>
+                          <td className="border border-slate-300 p-1 text-right font-bold">{sIdx === 0 ? previewJobCardBatch.initial_qty : ''}</td>
+                          <td className="border border-slate-300 p-1 text-center"></td>
+                          <td className="border border-slate-300 p-1 text-center text-emerald-700 font-bold">{sIdx === 0 ? 'PASSED' : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Footer instructions */}
+                <div className="pt-2 text-[10px] text-slate-500 border-t border-slate-200">
+                  Trolley card must physically accompany the batch at all times through all 7 stages.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
