@@ -15,6 +15,7 @@ import {
   FileCheck,
   Eye,
   X,
+  Trash2,
 } from 'lucide-react';
 import { Invoice } from '@/types/database.types';
 
@@ -25,6 +26,7 @@ export default function InvoicesPage() {
     parties,
     recordPaymentIn,
     sendWhatsAppNotification,
+    deleteInvoice,
     currentProfile,
   } = useFactory();
 
@@ -214,6 +216,17 @@ export default function InvoicesPage() {
                             title="Send WhatsApp Invoice Copy"
                           >
                             <MessageSquare className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Cancel/Delete Invoice ${inv.number}? This will reverse customer balance and restore stock quantities in ledger.`)) {
+                                deleteInvoice(inv.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 transition"
+                            title="Delete / Cancel Invoice (Restores Stock & Balance)"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </td>

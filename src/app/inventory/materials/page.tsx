@@ -3,11 +3,11 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR } from '@/lib/gst';
-import { Boxes, Plus, Search, AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import { Boxes, Plus, Search, AlertTriangle, CheckCircle2, X, Trash2 } from 'lucide-react';
 import { Material } from '@/types/database.types';
 
 export default function MaterialsPage() {
-  const { materials, addMaterial, units, currentProfile } = useFactory();
+  const { materials, addMaterial, deleteMaterial, units, currentProfile } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -138,16 +138,32 @@ export default function MaterialsPage() {
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      <span
-                        className={`text-sm font-extrabold ${
-                          isLow ? 'text-rose-400' : 'text-emerald-400'
-                        }`}
-                      >
-                        {mat.qty_on_hand.toLocaleString()}
-                      </span>
-                      <span className="text-slate-400 text-xs ml-1 font-semibold">
-                        {unit?.symbol || 'units'}
-                      </span>
+                      <div className="flex items-center justify-end gap-2">
+                        <div>
+                          <span
+                            className={`text-sm font-extrabold ${
+                              isLow ? 'text-rose-400' : 'text-emerald-400'
+                            }`}
+                          >
+                            {mat.qty_on_hand.toLocaleString()}
+                          </span>
+                          <span className="text-slate-400 text-xs ml-1 font-semibold">
+                            {unit?.symbol || 'units'}
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete raw material ${mat.name}?`)) {
+                              deleteMaterial(mat.id);
+                            }
+                          }}
+                          title="Delete Material"
+                          className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

@@ -3,10 +3,10 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR } from '@/lib/gst';
-import { CreditCard, Plus, Search, Calendar, UserCheck, X } from 'lucide-react';
+import { CreditCard, Plus, Search, Calendar, UserCheck, X, Trash2 } from 'lucide-react';
 
 export default function PaymentsInPage() {
-  const { paymentsIn, parties, invoices, recordPaymentIn, currentProfile } = useFactory();
+  const { paymentsIn, parties, invoices, recordPaymentIn, deletePaymentIn, currentProfile } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -122,7 +122,20 @@ export default function PaymentsInPage() {
                         {p.reference_no || '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right font-extrabold text-emerald-400 text-sm">
-                        {formatINR(p.amount)}
+                        <div className="flex items-center justify-end gap-2">
+                          <span>{formatINR(p.amount)}</span>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete payment receipt of ${formatINR(p.amount)}? This will reverse customer balance and reopen invoice status.`)) {
+                                deletePaymentIn(p.id);
+                              }
+                            }}
+                            className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                            title="Delete Payment Receipt"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

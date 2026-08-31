@@ -7,7 +7,7 @@ import { FileSpreadsheet, Plus, Layers, Trash2, X, Calculator } from 'lucide-rea
 import Link from 'next/link';
 
 export default function BOMPage() {
-  const { boms, products, materials, units, createBOM, currentProfile } = useFactory();
+  const { boms, products, materials, units, createBOM, deleteBOM, currentProfile } = useFactory();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State
@@ -110,11 +110,24 @@ export default function BOMPage() {
                   </p>
                 </div>
 
-                <div className="text-right">
-                  <span className="text-xs text-slate-400">Landed Cost / Pc:</span>
-                  <p className="text-lg font-black text-emerald-400">
-                    {formatINR(landedCost)}
-                  </p>
+                <div className="flex items-start gap-3">
+                  <div className="text-right">
+                    <span className="text-xs text-slate-400">Landed Cost / Pc:</span>
+                    <p className="text-lg font-black text-emerald-400">
+                      {formatINR(landedCost)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete BOM recipe ${bom.name}?`)) {
+                        deleteBOM(bom.id);
+                      }
+                    }}
+                    title="Delete BOM"
+                    className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
 

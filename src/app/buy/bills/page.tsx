@@ -3,11 +3,11 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR } from '@/lib/gst';
-import { Receipt, Plus, CreditCard, Search, X } from 'lucide-react';
+import { Receipt, Plus, CreditCard, Search, X, Trash2 } from 'lucide-react';
 import { PurchaseBill } from '@/types/database.types';
 
 export default function PurchaseBillsPage() {
-  const { purchaseBills, parties, recordPaymentOut, currentProfile } = useFactory();
+  const { purchaseBills, parties, recordPaymentOut, deletePurchaseBill, currentProfile } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
 
   // Payment Out Modal State
@@ -127,18 +127,32 @@ export default function PurchaseBillsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        {canPay && b.payment_status !== 'paid' && (
+                        <div className="flex items-center justify-end gap-2">
+                          {canPay && b.payment_status !== 'paid' && (
+                            <button
+                              onClick={() => {
+                                setPaymentBill(b);
+                                setPayAmount(String(b.total - (b.paid_amount || 0)));
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm transition inline-flex"
+                            >
+                              <CreditCard className="h-3 w-3" />
+                              <span>Pay Vendor</span>
+                            </button>
+                          )}
+
                           <button
                             onClick={() => {
-                              setPaymentBill(b);
-                              setPayAmount(String(b.total - (b.paid_amount || 0)));
+                              if (confirm(`Delete Purchase Bill ${b.number}? This will reverse vendor balance and deduct received raw materials from inventory.`)) {
+                                deletePurchaseBill(b.id);
+                              }
                             }}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm transition inline-flex"
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 transition"
+                            title="Delete / Cancel Purchase Bill (Restores Stock & Balance)"
                           >
-                            <CreditCard className="h-3 w-3" />
-                            <span>Pay Vendor</span>
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );

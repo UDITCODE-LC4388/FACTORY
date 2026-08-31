@@ -16,12 +16,13 @@ import {
   X,
   CreditCard,
   Building,
+  Trash2,
 } from 'lucide-react';
 import { JobWorkerProcess, OutsideJobWork } from '@/types/database.types';
 import Link from 'next/link';
 
 export default function OutsideVendorsPage() {
-  const { outsideJobWorks, addOutsideJobWork, updateOutsideJobWork, sendWhatsAppNotification } = useFactory();
+  const { outsideJobWorks, addOutsideJobWork, updateOutsideJobWork, deleteOutsideJobWork, sendWhatsAppNotification } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
   const [processFilter, setProcessFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -252,6 +253,18 @@ export default function OutsideVendorsPage() {
                             Receive
                           </button>
                         )}
+
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete vendor record for ${job.vendor_name} (${job.batch_no})?`)) {
+                              deleteOutsideJobWork(job.id);
+                            }
+                          }}
+                          title="Delete Record"
+                          className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>

@@ -17,6 +17,7 @@ export default function PurchaseOrdersPage() {
     createPurchaseOrder,
     postPurchaseBill,
     sendWhatsAppNotification,
+    deletePurchaseOrder,
     currentProfile,
   } = useFactory();
 
@@ -212,6 +213,17 @@ export default function PurchaseOrdersPage() {
                             title="Send WhatsApp PO copy to vendor"
                           >
                             <MessageSquare className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete purchase order ${po.number}?`)) {
+                                deletePurchaseOrder(po.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700"
+                            title="Delete Purchase Order"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </td>

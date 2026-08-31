@@ -26,6 +26,7 @@ export default function SaleOrdersPage() {
     createSaleOrder,
     convertSaleOrderToInvoice,
     sendWhatsAppNotification,
+    deleteSaleOrder,
     currentProfile,
   } = useFactory();
 
@@ -222,6 +223,17 @@ export default function SaleOrdersPage() {
                           title="Send WhatsApp Order Confirmation"
                         >
                           <MessageSquare className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete sale order ${order.number}?`)) {
+                              deleteSaleOrder(order.id);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700"
+                          title="Delete Order"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </td>

@@ -16,6 +16,9 @@ import {
   X,
   UserCheck,
   Building,
+  Camera,
+  Trash2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { generateRoadChallanPDF } from '@/lib/pdf-generator';
 import { RoadChallan, JobWorkerProcess } from '@/types/database.types';
@@ -27,6 +30,7 @@ export default function RoadChallansPage() {
     createRoadChallan,
     reconcileRoadChallan,
     createJobWorker,
+    deleteRoadChallan,
     factory,
     currentProfile,
   } = useFactory();
@@ -44,6 +48,7 @@ export default function RoadChallansPage() {
   const [processType, setProcessType] = useState<JobWorkerProcess>('screen_printing');
   const [challanDate, setChallanDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string>('');
 
   // Dynamic Lots & Size breakdown
   const [lots, setLots] = useState<
@@ -72,6 +77,18 @@ export default function RoadChallansPage() {
   // Reconciliation State
   const [returnedInputs, setReturnedInputs] = useState<Record<string, number>>({});
   const [completionDate, setCompletionDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Handle Photo upload
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setPhotoUrl(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Filtered Challans
   const filteredChallans = roadChallans.filter((c) => {
@@ -115,13 +132,6 @@ export default function RoadChallansPage() {
     setLots(updated);
   };
 
-  const handleAddSizeColumn = (lotIndex: number, customSize: string) => {
-    if (!customSize.trim()) return;
-    const updated = [...lots];
-    updated[lotIndex].sizes.push({ size: customSize.trim(), dispatched_qty: 0 });
-    setLots(updated);
-  };
-
   // Submit Create Challan
   const handleCreateChallanSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,12 +158,14 @@ export default function RoadChallansPage() {
       process_type: processType,
       challan_date: challanDate,
       notes,
+      photo_url: photoUrl,
       lots,
     });
 
     setIsCreateOpen(false);
     setSelectedWorkerId('');
     setNewWorkerName('');
+    setPhotoUrl('');
     alert(`Road Challan ${createdChallan.challan_no} created successfully!`);
   };
 
@@ -197,6 +209,12 @@ export default function RoadChallansPage() {
     alert('Challan inbound return reconciled successfully!');
   };
 
+  const handleDelete = (id: string, challanNo: string) => {
+    if (confirm(`Are you sure you want to delete Road Challan ${challanNo}? This will also delete linked vendor records.`)) {
+      deleteRoadChallan(id);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -207,7 +225,7 @@ export default function RoadChallansPage() {
             Road Challans (Job-Work Delivery Slips)
           </h1>
           <p className="text-xs sm:text-sm text-slate-400">
-            Dispatch garment lots to outside job workers (Making, Printing, Embroidery, Ironing) with Before vs After piece reconciliation
+            Dispatch garment lots to outside job workers (Making, Printing, Embroidery, Ironing) with attached product photos and piece reconciliation
           </p>
         </div>
 
@@ -292,18 +310,45 @@ export default function RoadChallansPage() {
                       </span>
                     </div>
 
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${
-                        ch.status === 'completed'
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          : ch.status === 'partially_returned'
-                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                          : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
-                      }`}
-                    >
-                      {ch.status.replace(/_/g, ' ')}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${
+                          ch.status === 'completed'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : ch.status === 'partially_returned'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                        }`}
+                      >
+                        {ch.status.replace(/_/g, ' ')}
+                      </span>
+
+                      <button
+                        onClick={() => handleDelete(ch.id, ch.challan_no)}
+                        title="Delete Road Challan"
+                        className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Attached Product Photo Preview */}
+                  {ch.photo_url && (
+                    <div className="flex items-center gap-3 p-2 rounded-xl bg-slate-850 border border-slate-800">
+                      <img
+                        src={ch.photo_url}
+                        alt="Product / Sample"
+                        className="w-14 h-14 rounded-lg object-cover border border-slate-750"
+                      />
+                      <div className="text-xs text-slate-300">
+                        <span className="font-semibold text-white flex items-center gap-1">
+                          <ImageIcon className="h-3.5 w-3.5 text-blue-400" /> Sample Photo Attached
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Attached with outbound dispatch slip</p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Lots & Size Breakdown */}
                   <div className="p-3 rounded-xl bg-slate-850 border border-slate-800 space-y-2 text-xs">
@@ -438,9 +483,9 @@ export default function RoadChallansPage() {
                       <option value="screen_printing">Screen Printing</option>
                       <option value="digital_printing">Digital Printing</option>
                       <option value="making">Making / Stitching</option>
-                      <option value="dyeing">Dyeing & Washing</option>
                       <option value="embroidery">Embroidery</option>
-                      <option value="ironing">Ironing & Finishing</option>
+                      <option value="dyeing">Dyeing & Washing</option>
+                      <option value="ironing">Ironing & Pressing</option>
                     </select>
                   </div>
                 </div>
@@ -479,6 +524,42 @@ export default function RoadChallansPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Product Photo Upload Section */}
+              <div className="p-4 rounded-2xl bg-slate-850 border border-slate-800 space-y-2">
+                <label className="font-bold text-white text-xs flex items-center gap-1.5">
+                  <Camera className="h-4 w-4 text-amber-400" />
+                  Attach Product / Sample Photo
+                </label>
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition">
+                    <Camera className="h-3.5 w-3.5 text-blue-400" />
+                    <span>Choose File / Take Photo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {photoUrl && (
+                    <div className="relative">
+                      <img
+                        src={photoUrl}
+                        alt="Preview"
+                        className="w-12 h-12 rounded-lg object-cover border border-blue-500/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPhotoUrl('')}
+                        className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-rose-600 text-white"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Dynamic Dispatch Lots & Size Matrix */}

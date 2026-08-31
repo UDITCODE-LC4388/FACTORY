@@ -4,10 +4,10 @@ import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR, INDIAN_STATES } from '@/lib/gst';
 import { Party, PartyType } from '@/types/database.types';
-import { Users, Plus, Search, Phone, MapPin, Building, ShieldCheck, X } from 'lucide-react';
+import { Users, Plus, Search, Phone, MapPin, Building, ShieldCheck, X, Trash2 } from 'lucide-react';
 
 export default function PartiesPage() {
-  const { parties, addParty, currentProfile } = useFactory();
+  const { parties, addParty, deleteParty, currentProfile } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -174,24 +174,40 @@ export default function PartiesPage() {
                     <p className="text-[10px] text-slate-400">State Code: {party.state_code}</p>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    <span
-                      className={`font-bold ${
-                        party.balance > 0
-                          ? 'text-emerald-400'
-                          : party.balance < 0
-                          ? 'text-rose-400'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      {formatINR(Math.abs(party.balance))}
-                    </span>
-                    <p className="text-[10px] text-slate-500">
-                      {party.balance > 0
-                        ? '(Receivable)'
-                        : party.balance < 0
-                        ? '(Payable)'
-                        : 'Settled'}
-                    </p>
+                    <div className="flex items-center justify-end gap-2">
+                      <div>
+                        <span
+                          className={`font-bold ${
+                            party.balance > 0
+                              ? 'text-emerald-400'
+                              : party.balance < 0
+                              ? 'text-rose-400'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {formatINR(Math.abs(party.balance))}
+                        </span>
+                        <p className="text-[10px] text-slate-500">
+                          {party.balance > 0
+                            ? '(Receivable)'
+                            : party.balance < 0
+                            ? '(Payable)'
+                            : 'Settled'}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete party ${party.name}?`)) {
+                            deleteParty(party.id);
+                          }
+                        }}
+                        title="Delete Party"
+                        className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

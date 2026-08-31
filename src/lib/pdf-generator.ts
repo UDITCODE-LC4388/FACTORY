@@ -21,8 +21,46 @@ interface jsPDFCustom extends jsPDF {
 }
 
 /**
+ * Helper to trigger both native browser printer popup AND reliable file download
+ */
+export function printOrDownloadPDF(doc: jsPDF, filename: string) {
+  try {
+    // 1. Direct PDF Download
+    doc.save(filename);
+
+    // 2. Also open native browser print dialog via blob iframe if in browser
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.src = blobUrl;
+      document.body.appendChild(iframe);
+
+      iframe.onload = () => {
+        setTimeout(() => {
+          try {
+            iframe.focus();
+            iframe.contentWindow?.print();
+          } catch {
+            // ignore
+          }
+        }, 300);
+      };
+    }
+  } catch (err) {
+    doc.save(filename);
+  }
+}
+
+/**
  * 1. Road Challan (Job-Work Delivery Challan) PDF Generator
- * Traditional layout matching Indian garment job-work challan paper format
+ * Traditional layout matching Indian garment job-work challan paper format + Photo support
  */
 export async function generateRoadChallanPDF(
   challan: RoadChallan,
@@ -153,6 +191,20 @@ export async function generateRoadChallanPDF(
 
   let currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : 140;
 
+  // Attached Product Photo if present
+  if (challan.photo_url) {
+    try {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Attached Product / Sample Photo:', 14, currentY);
+      doc.addImage(challan.photo_url, 'JPEG', 14, currentY + 3, 35, 35);
+      currentY += 42;
+    } catch {
+      // ignore
+    }
+  }
+
   // Inbound Return Reconciliation Table (If returned or partially returned)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -197,7 +249,7 @@ export async function generateRoadChallanPDF(
     bodyStyles: { fontSize: 8 },
   });
 
-  currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : 210;
+  currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 210;
 
   // Terms & Conditions
   doc.setFontSize(7.5);
@@ -215,7 +267,7 @@ export async function generateRoadChallanPDF(
   );
 
   // Signatures & Stamp Block
-  currentY += 18;
+  currentY += 15;
   doc.setDrawColor(203, 213, 225);
   doc.line(14, currentY + 12, 60, currentY + 12);
   doc.line(75, currentY + 12, 125, currentY + 12);
@@ -228,7 +280,7 @@ export async function generateRoadChallanPDF(
   doc.text('Job Worker Signature & Stamp', 75, currentY + 17);
   doc.text(`For ${factory.name || 'Company'}`, 140, currentY + 17);
 
-  doc.save(`RoadChallan_${challan.challan_no}.pdf`);
+  printOrDownloadPDF(doc, `RoadChallan_${challan.challan_no}.pdf`);
 }
 
 /**
@@ -377,7 +429,7 @@ export async function generateInvoicePDF(
   doc.text(`For ${factory.name}`, 140, finalY + 58);
   doc.text('Authorized Signatory', 140, finalY + 70);
 
-  doc.save(`${invoice.number}.pdf`);
+  printOrDownloadPDF(doc, `${invoice.number}.pdf`);
 }
 
 /**
@@ -437,7 +489,7 @@ export async function generateJobCardPDF(
 
   const nextY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 130;
 
-  // Stage Tracking Sign-off Grid
+  // Stage Tracking Sign-off Grid (All 7 Stages)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('Floor Stage Route & Quality Sign-Off:', 14, nextY);
@@ -458,8 +510,8 @@ export async function generateJobCardPDF(
     body: stageGrid,
     theme: 'grid',
     headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8 },
-    bodyStyles: { minCellHeight: 11, fontSize: 8 },
+    bodyStyles: { minCellHeight: 10, fontSize: 8 },
   });
 
-  doc.save(`JobCard_${batch.batch_no}.pdf`);
+  printOrDownloadPDF(doc, `JobCard_${batch.batch_no}.pdf`);
 }

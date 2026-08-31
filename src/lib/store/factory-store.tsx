@@ -203,12 +203,30 @@ interface FactoryContextType {
   addParty: (party: Partial<Party>) => Party;
   addMaterial: (material: Partial<Material>) => Material;
   addProduct: (product: Partial<Product>) => Product;
+
+  // Everywhere Delete & Undo Capabilities
+  deleteParty: (id: string) => void;
+  deleteProduct: (id: string) => void;
+  deleteMaterial: (id: string) => void;
+  deleteBOM: (id: string) => void;
+  deleteSaleOrder: (id: string) => void;
+  deleteInvoice: (id: string) => void;
+  deletePaymentIn: (id: string) => void;
+  deletePurchaseOrder: (id: string) => void;
+  deletePurchaseBill: (id: string) => void;
+  deletePaymentOut: (id: string) => void;
+  deleteProductionBatch: (id: string) => void;
+  deleteProductionJob: (id: string) => void;
+  deleteRoadChallan: (id: string) => void;
+  deleteOutsideJobWork: (id: string) => void;
+  deleteJobWorker: (id: string) => void;
+
   resetToCleanSlate: () => void;
 }
 
 const FactoryContext = createContext<FactoryContextType | null>(null);
 
-const STORAGE_KEY = 'factoryos_store_v5_ironing';
+const STORAGE_KEY = 'factoryos_store_v6_full';
 const BROADCAST_CHANNEL_NAME = 'factoryos_realtime_bus';
 
 export function FactoryProvider({ children }: { children: React.ReactNode }) {
@@ -1750,6 +1768,144 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     return { successCount, errors };
   }, [addParty, addMaterial, addProduct, factory.state]);
 
+  // -------------------------------------------------------------------------
+  // EVERYWHERE DELETE / UNDO REVERSIBLE ACTIONS
+  // -------------------------------------------------------------------------
+
+  const deleteParty = useCallback((id: string) => {
+    setParties((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const deleteProduct = useCallback((id: string) => {
+    setProducts((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const deleteMaterial = useCallback((id: string) => {
+    setMaterials((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
+  const deleteBOM = useCallback((id: string) => {
+    setBoms((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
+  const deleteSaleOrder = useCallback((id: string) => {
+    setSaleOrders((prev) => prev.filter((so) => so.id !== id));
+  }, []);
+
+  const deleteInvoice = useCallback((id: string) => {
+    const inv = invoices.find((i) => i.id === id);
+    if (inv) {
+      // Revert party balance
+      setParties((prev) =>
+        prev.map((p) => (p.id === inv.party_id ? { ...p, balance: p.balance - inv.total } : p))
+      );
+      // Revert product stocks
+      (inv.items || []).forEach((item) => {
+        if (item.product_id) {
+          setProducts((prev) =>
+            prev.map((pr) => (pr.id === item.product_id ? { ...pr, stock_qty: pr.stock_qty + item.qty } : pr))
+          );
+        }
+      });
+      // Revert sale order status if linked
+      if (inv.sale_order_id) {
+        setSaleOrders((prev) =>
+          prev.map((so) => (so.id === inv.sale_order_id ? { ...so, status: 'draft' } : so))
+        );
+      }
+    }
+    setInvoices((prev) => prev.filter((i) => i.id !== id));
+  }, [invoices]);
+
+  const deletePaymentIn = useCallback((id: string) => {
+    const pay = paymentsIn.find((p) => p.id === id);
+    if (pay) {
+      setParties((prev) =>
+        prev.map((p) => (p.id === pay.party_id ? { ...p, balance: p.balance + pay.amount } : p))
+      );
+      if (pay.invoice_id) {
+        setInvoices((prev) =>
+          prev.map((inv) => {
+            if (inv.id === pay.invoice_id) {
+              const newPaid = Math.max(0, (inv.paid_amount || 0) - pay.amount);
+              return { ...inv, paid_amount: newPaid, payment_status: newPaid > 0 ? 'partial' : 'unpaid' };
+            }
+            return inv;
+          })
+        );
+      }
+    }
+    setPaymentsIn((prev) => prev.filter((p) => p.id !== id));
+  }, [paymentsIn]);
+
+  const deletePurchaseOrder = useCallback((id: string) => {
+    setPurchaseOrders((prev) => prev.filter((po) => po.id !== id));
+  }, []);
+
+  const deletePurchaseBill = useCallback((id: string) => {
+    const bill = purchaseBills.find((pb) => pb.id === id);
+    if (bill) {
+      setParties((prev) =>
+        prev.map((p) => (p.id === bill.party_id ? { ...p, balance: p.balance + bill.total } : p))
+      );
+      (bill.items || []).forEach((item) => {
+        setMaterials((prev) =>
+          prev.map((m) =>
+            m.id === item.material_id ? { ...m, qty_on_hand: Math.max(0, m.qty_on_hand - item.qty) } : m
+          )
+        );
+      });
+      if (bill.purchase_order_id) {
+        setPurchaseOrders((prev) =>
+          prev.map((po) => (po.id === bill.purchase_order_id ? { ...po, status: 'draft' } : po))
+        );
+      }
+    }
+    setPurchaseBills((prev) => prev.filter((pb) => pb.id !== id));
+  }, [purchaseBills]);
+
+  const deletePaymentOut = useCallback((id: string) => {
+    const pay = paymentsOut.find((p) => p.id === id);
+    if (pay) {
+      setParties((prev) =>
+        prev.map((p) => (p.id === pay.party_id ? { ...p, balance: p.balance - pay.amount } : p))
+      );
+      if (pay.purchase_bill_id) {
+        setPurchaseBills((prev) =>
+          prev.map((pb) => {
+            if (pb.id === pay.purchase_bill_id) {
+              const newPaid = Math.max(0, (pb.paid_amount || 0) - pay.amount);
+              return { ...pb, paid_amount: newPaid, payment_status: newPaid > 0 ? 'partial' : 'unpaid' };
+            }
+            return pb;
+          })
+        );
+      }
+    }
+    setPaymentsOut((prev) => prev.filter((p) => p.id !== id));
+  }, [paymentsOut]);
+
+  const deleteProductionBatch = useCallback((id: string) => {
+    setBatches((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
+  const deleteProductionJob = useCallback((id: string) => {
+    setProductionJobs((prev) => prev.filter((j) => j.id !== id));
+  }, []);
+
+  const deleteRoadChallan = useCallback((id: string) => {
+    setRoadChallans((prev) => prev.filter((c) => c.id !== id));
+    setOutsideJobWorks((prev) => prev.filter((jw) => jw.challan_id !== id));
+  }, []);
+
+  const deleteOutsideJobWork = useCallback((id: string) => {
+    setOutsideJobWorks((prev) => prev.filter((jw) => jw.id !== id));
+  }, []);
+
+  const deleteJobWorker = useCallback((id: string) => {
+    setJobWorkers((prev) => prev.filter((w) => w.id !== id));
+  }, []);
+
   return (
     <FactoryContext.Provider
       value={{
@@ -1807,6 +1963,21 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         executeVoiceCommand,
         sendWhatsAppNotification,
         importBulkEntities,
+        deleteParty,
+        deleteProduct,
+        deleteMaterial,
+        deleteBOM,
+        deleteSaleOrder,
+        deleteInvoice,
+        deletePaymentIn,
+        deletePurchaseOrder,
+        deletePurchaseBill,
+        deletePaymentOut,
+        deleteProductionBatch,
+        deleteProductionJob,
+        deleteRoadChallan,
+        deleteOutsideJobWork,
+        deleteJobWorker,
         resetToCleanSlate,
       }}
     >

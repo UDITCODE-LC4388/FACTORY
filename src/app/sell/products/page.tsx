@@ -3,10 +3,10 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR } from '@/lib/gst';
-import { PackageCheck, Plus, Search, Tag, Layers, X } from 'lucide-react';
+import { PackageCheck, Plus, Search, Tag, Layers, X, Trash2 } from 'lucide-react';
 
 export default function ProductsPage() {
-  const { products, addProduct, categories, units, currentProfile } = useFactory();
+  const { products, addProduct, deleteProduct, categories, units, currentProfile } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -132,16 +132,32 @@ export default function ProductsPage() {
                     {formatINR(p.sale_price)} <span className="text-[10px] text-slate-500 font-normal">/ piece</span>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    <span
-                      className={`font-bold text-sm ${
-                        p.stock_qty <= (p.low_stock_threshold || 10)
-                          ? 'text-amber-400'
-                          : 'text-emerald-400'
-                      }`}
-                    >
-                      {p.stock_qty.toLocaleString()}
-                    </span>
-                    <span className="text-slate-400 text-xs ml-1">Pcs</span>
+                    <div className="flex items-center justify-end gap-2">
+                      <div>
+                        <span
+                          className={`font-bold text-sm ${
+                            p.stock_qty <= (p.low_stock_threshold || 10)
+                              ? 'text-amber-400'
+                              : 'text-emerald-400'
+                          }`}
+                        >
+                          {p.stock_qty.toLocaleString()}
+                        </span>
+                        <span className="text-slate-400 text-xs ml-1">Pcs</span>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete product ${p.name}?`)) {
+                            deleteProduct(p.id);
+                          }
+                        }}
+                        title="Delete Product"
+                        className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

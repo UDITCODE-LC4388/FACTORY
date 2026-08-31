@@ -3,10 +3,10 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR } from '@/lib/gst';
-import { CreditCard, Plus, Search, X } from 'lucide-react';
+import { CreditCard, Plus, Search, X, Trash2 } from 'lucide-react';
 
 export default function PaymentsOutPage() {
-  const { paymentsOut, parties, recordPaymentOut, currentProfile } = useFactory();
+  const { paymentsOut, parties, recordPaymentOut, deletePaymentOut, currentProfile } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -125,7 +125,20 @@ export default function PaymentsOutPage() {
                         {p.reference_no || '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right font-extrabold text-rose-400 text-sm">
-                        {formatINR(p.amount)}
+                        <div className="flex items-center justify-end gap-2">
+                          <span>{formatINR(p.amount)}</span>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete payment to vendor of ${formatINR(p.amount)}? This will reverse vendor balance and reopen purchase bill.`)) {
+                                deletePaymentOut(p.id);
+                              }
+                            }}
+                            className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                            title="Delete Payment Out"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

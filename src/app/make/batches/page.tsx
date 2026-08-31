@@ -30,6 +30,7 @@ export default function BatchesPage() {
     createProductionBatch,
     moveBatchStage,
     recordBatchWriteOff,
+    deleteProductionBatch,
     factory,
     currentProfile,
   } = useFactory();
@@ -248,11 +249,24 @@ export default function BatchesPage() {
                       <p className="text-xs text-slate-400">{batch.product_name || 'Standard'}</p>
                     </div>
 
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${stageCfg.bgLight} ${stageCfg.color}`}
-                    >
-                      {stageCfg.label}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${stageCfg.bgLight} ${stageCfg.color}`}
+                      >
+                        {stageCfg.label}
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete batch ${batch.batch_no}?`)) {
+                            deleteProductionBatch(batch.id);
+                          }
+                        }}
+                        title="Delete Batch"
+                        className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-xs p-2.5 rounded-xl bg-slate-850 border border-slate-800">
