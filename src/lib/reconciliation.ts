@@ -18,9 +18,10 @@ export interface BatchTraceabilityCheck {
 
 export const STAGE_ORDER: FactoryStage[] = [
   'cutting',
+  'printing',
   'stitching',
-  'ironing',
   'qc',
+  'ironing',
   'packing',
   'dispatch',
 ];
@@ -35,23 +36,29 @@ export const STAGE_CONFIG: Record<
     bgLight: 'bg-amber-500/10 border-amber-500/30',
     icon: 'Scissors',
   },
+  printing: {
+    label: 'Printing (Screen / Digital)',
+    color: 'text-indigo-700 dark:text-indigo-400',
+    bgLight: 'bg-indigo-500/10 border-indigo-500/30',
+    icon: 'Printer',
+  },
   stitching: {
-    label: 'Stitching',
+    label: 'Stitching / Making',
     color: 'text-blue-700 dark:text-blue-400',
     bgLight: 'bg-blue-500/10 border-blue-500/30',
     icon: 'Shirt',
-  },
-  ironing: {
-    label: 'Ironing & Finishing',
-    color: 'text-cyan-700 dark:text-cyan-400',
-    bgLight: 'bg-cyan-500/10 border-cyan-500/30',
-    icon: 'Sparkles',
   },
   qc: {
     label: 'Quality Check (QC)',
     color: 'text-purple-700 dark:text-purple-400',
     bgLight: 'bg-purple-500/10 border-purple-500/30',
     icon: 'CheckSquare',
+  },
+  ironing: {
+    label: 'Ironing / Pressing',
+    color: 'text-cyan-700 dark:text-cyan-400',
+    bgLight: 'bg-cyan-500/10 border-cyan-500/30',
+    icon: 'Sparkles',
   },
   packing: {
     label: 'Packing',
@@ -60,7 +67,7 @@ export const STAGE_CONFIG: Record<
     icon: 'Package',
   },
   dispatch: {
-    label: 'Dispatch / Finished',
+    label: 'Dispatch / Finished Goods',
     color: 'text-rose-700 dark:text-rose-400',
     bgLight: 'bg-rose-500/10 border-rose-500/30',
     icon: 'Truck',

@@ -510,11 +510,12 @@ export default function BatchesPage() {
                   onChange={(e) => setTargetStage(e.target.value as any)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="stitching">Stitching</option>
-                  <option value="ironing">Ironing & Finishing</option>
+                  <option value="printing">Printing (Screen / Digital)</option>
+                  <option value="stitching">Stitching / Making</option>
                   <option value="qc">Quality Check (QC)</option>
+                  <option value="ironing">Ironing / Pressing</option>
                   <option value="packing">Packing</option>
-                  <option value="dispatch">Dispatch / Finished</option>
+                  <option value="dispatch">Dispatch / Finished Goods</option>
                 </select>
               </div>
 

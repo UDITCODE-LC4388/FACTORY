@@ -444,11 +444,12 @@ export async function generateJobCardPDF(
 
   const stageGrid = [
     ['1. Cutting', 'In-House', `${batch.initial_qty}`, '', `${batch.initial_qty}`, '', 'Passed'],
-    ['2. Stitching', 'In-House / Jobwork', '', '', '', '', ''],
-    ['3. Ironing & Finishing', 'In-House / Jobwork', '', '', '', '', ''],
-    ['4. QC Inspection', 'In-House', '', '', '', '', ''],
-    ['5. Packing', 'In-House', '', '', '', '', ''],
-    ['6. Dispatch', 'In-House', '', '', '', '', ''],
+    ['2. Printing', 'In-House / Jobwork', '', '', '', '', ''],
+    ['3. Stitching', 'In-House / Jobwork', '', '', '', '', ''],
+    ['4. Quality Check (QC)', 'In-House', '', '', '', '', ''],
+    ['5. Ironing / Pressing', 'In-House / Jobwork', '', '', '', '', ''],
+    ['6. Packing', 'In-House', '', '', '', '', ''],
+    ['7. Dispatch', 'In-House', '', '', '', '', ''],
   ];
 
   doc.autoTable({

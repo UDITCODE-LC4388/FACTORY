@@ -10,9 +10,10 @@ export type UserRole =
 
 export type FactoryStage =
   | 'cutting'
+  | 'printing'
   | 'stitching'
-  | 'ironing'
   | 'qc'
+  | 'ironing'
   | 'packing'
   | 'dispatch';
 

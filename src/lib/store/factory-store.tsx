@@ -1565,12 +1565,14 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         const batchNum = batchMatch ? batchMatch[1].toUpperCase() : '';
         const targetBatch = batches.find((b) => b.batch_no.toUpperCase().includes(batchNum));
 
-        let toStage: FactoryStage = 'stitching';
-        if (text.includes('iron') || text.includes('press') || text.includes('finish')) toStage = 'ironing';
+        let toStage: FactoryStage = 'printing';
+        if (text.includes('print')) toStage = 'printing';
+        else if (text.includes('stitch') || text.includes('making')) toStage = 'stitching';
         else if (text.includes('qc') || text.includes('check') || text.includes('inspect')) toStage = 'qc';
+        else if (text.includes('iron') || text.includes('press')) toStage = 'ironing';
         else if (text.includes('pack')) toStage = 'packing';
         else if (text.includes('dispatch')) toStage = 'dispatch';
-        else if (text.includes('stitch')) toStage = 'stitching';
+        else if (text.includes('cut')) toStage = 'cutting';
 
         const qtyMatch = text.match(/(\d+)\s*(pcs|pieces|units|trolley)?/i);
         const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : targetBatch?.current_qty || 0;

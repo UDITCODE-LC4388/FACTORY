@@ -20,9 +20,10 @@ CREATE TYPE user_role AS ENUM (
 
 CREATE TYPE factory_stage AS ENUM (
     'cutting',
+    'printing',
     'stitching',
-    'ironing',
     'qc',
+    'ironing',
     'packing',
     'dispatch'
 );
