@@ -19,6 +19,8 @@ import {
   Printer,
 } from 'lucide-react';
 import { Invoice } from '@/types/database.types';
+import { WhatsAppModal } from '@/components/common/whatsapp-modal';
+import { WhatsAppTemplates } from '@/lib/whatsapp';
 
 export default function InvoicesPage() {
   const {
@@ -33,6 +35,12 @@ export default function InvoicesPage() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [whatsAppModalData, setWhatsAppModalData] = useState<{
+    phone: string;
+    name: string;
+    message: string;
+    invoiceId: string;
+  } | null>(null);
 
   // Payment Recording State
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<Invoice | null>(null);
@@ -70,16 +78,25 @@ export default function InvoicesPage() {
     setPaymentRef('');
   };
 
-  const handleSendWhatsApp = async (inv: Invoice) => {
+  const handleOpenWhatsAppModal = (inv: Invoice) => {
     const party = parties.find((p) => p.id === inv.party_id) || inv.party;
     const phone = party?.phone || '+91 98000 00000';
     const partyName = party?.name || 'Valued Customer';
-    const message = `Hello ${partyName},\n\nYour GST Tax Invoice *#${inv.number}* for *${formatINR(inv.total)}* from ${factory.name} is ready.\n\nDate: ${inv.date}\nPayment Status: ${inv.payment_status.toUpperCase()}\n\nThank you for doing business with us!`;
+    const msg = WhatsAppTemplates.invoice({
+      customerName: partyName,
+      invoiceNo: inv.number,
+      totalAmount: formatINR(inv.total),
+      factoryName: factory.name || 'Manisha Garments',
+      date: inv.date,
+      paymentStatus: inv.payment_status,
+    });
 
-    const res = await sendWhatsAppNotification(phone, partyName, message, 'invoices', inv.id);
-    if (res.directUrl) {
-      window.open(res.directUrl, '_blank');
-    }
+    setWhatsAppModalData({
+      phone,
+      name: partyName,
+      message: msg,
+      invoiceId: inv.id,
+    });
   };
 
   const canRecordPayment = ['owner', 'master', 'accountant'].includes(currentProfile.role);
@@ -215,9 +232,9 @@ export default function InvoicesPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => handleSendWhatsApp(inv)}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-950 text-emerald-400 border border-slate-700 transition"
-                            title="Send WhatsApp Invoice Copy"
+                            onClick={() => handleOpenWhatsAppModal(inv)}
+                            className="p-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 transition"
+                            title="Send WhatsApp Invoice Copy (1-Click or Meta Cloud)"
                           >
                             <MessageSquare className="h-3.5 w-3.5" />
                           </button>
@@ -477,6 +494,19 @@ export default function InvoicesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal 3: WhatsApp Dispatcher */}
+      {whatsAppModalData && (
+        <WhatsAppModal
+          isOpen={!!whatsAppModalData}
+          onClose={() => setWhatsAppModalData(null)}
+          defaultPhone={whatsAppModalData.phone}
+          defaultName={whatsAppModalData.name}
+          defaultMessage={whatsAppModalData.message}
+          refTable="invoices"
+          refId={whatsAppModalData.invoiceId}
+        />
       )}
     </div>
   );

@@ -21,9 +21,12 @@ import {
   Image as ImageIcon,
   Download,
   Eye,
+  MessageSquare,
 } from 'lucide-react';
 import { generateRoadChallanPDF } from '@/lib/pdf-generator';
 import { RoadChallan, JobWorkerProcess } from '@/types/database.types';
+import { WhatsAppModal } from '@/components/common/whatsapp-modal';
+import { WhatsAppTemplates } from '@/lib/whatsapp';
 
 export default function RoadChallansPage() {
   const {
@@ -42,6 +45,12 @@ export default function RoadChallansPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [reconChallan, setReconChallan] = useState<RoadChallan | null>(null);
   const [previewChallan, setPreviewChallan] = useState<RoadChallan | null>(null);
+  const [whatsAppModalData, setWhatsAppModalData] = useState<{
+    phone: string;
+    name: string;
+    message: string;
+    challanId: string;
+  } | null>(null);
 
   // Form State: Create Road Challan
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
@@ -216,6 +225,30 @@ export default function RoadChallansPage() {
     if (confirm(`Are you sure you want to delete Road Challan ${challanNo}? This will also delete linked vendor records.`)) {
       deleteRoadChallan(id);
     }
+  };
+
+  const handleOpenWhatsAppChallan = (ch: RoadChallan) => {
+    const worker = ch.job_worker;
+    const phone = worker?.phone || '+91 98000 00000';
+    const name = worker?.name || 'Job Worker';
+    const totalPcs = (ch.lots || []).reduce(
+      (sum, lot) => sum + lot.sizes.reduce((lSum, s) => lSum + s.dispatched_qty, 0),
+      0
+    );
+    const msg = WhatsAppTemplates.roadChallan({
+      vendorName: name,
+      challanNo: ch.challan_no,
+      processType: ch.process_type,
+      totalPcs,
+      factoryName: factory.name || 'Manisha Garments',
+      date: ch.challan_date,
+    });
+    setWhatsAppModalData({
+      phone,
+      name,
+      message: msg,
+      challanId: ch.id,
+    });
   };
 
   const handlePrintTrigger = (ch: RoadChallan) => {
@@ -411,13 +444,24 @@ export default function RoadChallansPage() {
 
                 {/* Actions */}
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => handlePrintTrigger(ch)}
-                    className="px-3.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white font-bold text-xs flex items-center gap-1.5 border border-blue-500/30 transition shadow-sm"
-                  >
-                    <Printer className="h-3.5 w-3.5" />
-                    <span>Print Challan</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handlePrintTrigger(ch)}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white font-bold text-xs flex items-center gap-1.5 border border-blue-500/30 transition shadow-sm"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      <span>Print</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleOpenWhatsAppChallan(ch)}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white font-bold text-xs flex items-center gap-1.5 border border-emerald-500/30 transition shadow-sm"
+                      title="Dispatch Challan to Job Worker on WhatsApp"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>WhatsApp</span>
+                    </button>
+                  </div>
 
                   {ch.status !== 'completed' && (
                     <button
@@ -951,6 +995,19 @@ export default function RoadChallansPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal 4: WhatsApp Dispatcher */}
+      {whatsAppModalData && (
+        <WhatsAppModal
+          isOpen={!!whatsAppModalData}
+          onClose={() => setWhatsAppModalData(null)}
+          defaultPhone={whatsAppModalData.phone}
+          defaultName={whatsAppModalData.name}
+          defaultMessage={whatsAppModalData.message}
+          refTable="road_challans"
+          refId={whatsAppModalData.challanId}
+        />
       )}
     </div>
   );

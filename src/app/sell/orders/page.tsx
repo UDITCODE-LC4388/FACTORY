@@ -15,6 +15,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { WhatsAppModal } from '@/components/common/whatsapp-modal';
+import { WhatsAppTemplates } from '@/lib/whatsapp';
 
 export default function SaleOrdersPage() {
   const router = useRouter();
@@ -34,6 +36,12 @@ export default function SaleOrdersPage() {
   const [partyId, setPartyId] = useState(parties[0]?.id || '');
   const [orderNumber, setOrderNumber] = useState('');
   const [notes, setNotes] = useState('');
+  const [whatsAppModalData, setWhatsAppModalData] = useState<{
+    phone: string;
+    name: string;
+    message: string;
+    orderId: string;
+  } | null>(null);
 
   // Line items state
   const [lineItems, setLineItems] = useState<
@@ -109,16 +117,23 @@ export default function SaleOrdersPage() {
     }
   };
 
-  const handleSendWhatsApp = async (order: (typeof saleOrders)[0]) => {
+  const handleSendWhatsApp = (order: (typeof saleOrders)[0]) => {
     const party = parties.find((p) => p.id === order.party_id);
-    if (!party) return;
-    const msg = `Namaste ${party.name}, your Sale Order #${order.number} for ${formatINR(
-      order.total_amount
-    )} has been recorded at ${factory.name}. Production is scheduled.`;
-    const res = await sendWhatsAppNotification(party.phone, party.name, msg, 'sale_orders', order.id);
-    if (res.directUrl) {
-      window.open(res.directUrl, '_blank');
-    }
+    const phone = party?.phone || '+91 98000 00000';
+    const name = party?.name || 'Customer';
+    const msg = WhatsAppTemplates.saleOrder({
+      customerName: name,
+      orderNo: order.number,
+      itemCount: order.items?.length || 1,
+      totalAmount: formatINR(order.total_amount),
+      factoryName: factory.name || 'Manisha Garments',
+    });
+    setWhatsAppModalData({
+      phone,
+      name,
+      message: msg,
+      orderId: order.id,
+    });
   };
 
   const canEdit = ['owner', 'master', 'accountant'].includes(currentProfile.role);
@@ -406,6 +421,19 @@ export default function SaleOrdersPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Modal 2: WhatsApp Dispatcher */}
+      {whatsAppModalData && (
+        <WhatsAppModal
+          isOpen={!!whatsAppModalData}
+          onClose={() => setWhatsAppModalData(null)}
+          defaultPhone={whatsAppModalData.phone}
+          defaultName={whatsAppModalData.name}
+          defaultMessage={whatsAppModalData.message}
+          refTable="sale_orders"
+          refId={whatsAppModalData.orderId}
+        />
       )}
     </div>
   );
