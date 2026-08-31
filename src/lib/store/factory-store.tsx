@@ -218,6 +218,7 @@ interface FactoryContextType {
   addParty: (party: Partial<Party>) => Party;
   addMaterial: (material: Partial<Material>) => Material;
   addProduct: (product: Partial<Product>) => Product;
+  createPackingList: (data: Partial<PackingList>, items: Array<Partial<PackingListItem>>) => PackingList;
 
   // Everywhere Delete & Undo Capabilities
   deleteParty: (id: string) => void;
@@ -235,6 +236,9 @@ interface FactoryContextType {
   deleteRoadChallan: (id: string) => void;
   deleteOutsideJobWork: (id: string) => void;
   deleteJobWorker: (id: string) => void;
+  deletePackingList: (id: string) => void;
+  deleteFabricEstimate: (id: string) => void;
+  deleteInventoryLedgerEntry: (id: string) => void;
 
   resetToCleanSlate: () => void;
 }
@@ -2066,6 +2070,48 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     setJobWorkers((prev) => prev.filter((w) => w.id !== id));
   }, []);
 
+  const createPackingList = useCallback((
+    data: Partial<PackingList>,
+    items: Array<Partial<PackingListItem>>
+  ): PackingList => {
+    const listId = crypto.randomUUID();
+    const listItems: PackingListItem[] = items.map((it) => ({
+      id: crypto.randomUUID(),
+      factory_id: factory.id,
+      packing_list_id: listId,
+      product_id: it.product_id || products[0]?.id || '',
+      carton_no: it.carton_no || 'Carton 01',
+      size: it.size || 'M',
+      colour: it.colour || 'Standard',
+      qty: Number(it.qty) || 50,
+    }));
+
+    const newPL: PackingList = {
+      id: listId,
+      factory_id: factory.id,
+      number: data.number || `PL-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      invoice_id: data.invoice_id,
+      status: data.status || 'draft',
+      created_at: new Date().toISOString(),
+      items: listItems,
+    };
+
+    setPackingLists((prev) => [newPL, ...prev]);
+    return newPL;
+  }, [factory.id, products]);
+
+  const deletePackingList = useCallback((id: string) => {
+    setPackingLists((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const deleteFabricEstimate = useCallback((id: string) => {
+    setFabricEstimates((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const deleteInventoryLedgerEntry = useCallback((id: string) => {
+    setInventoryLedger((prev) => prev.filter((l) => l.id !== id));
+  }, []);
+
   return (
     <FactoryContext.Provider
       value={{
@@ -2124,6 +2170,10 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         executeVoiceCommand,
         sendWhatsAppNotification,
         importBulkEntities,
+        createPackingList,
+        deletePackingList,
+        deleteFabricEstimate,
+        deleteInventoryLedgerEntry,
         deleteParty,
         deleteProduct,
         deleteMaterial,

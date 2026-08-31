@@ -3,11 +3,11 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR } from '@/lib/gst';
-import { Calculator, Sparkles, CheckCircle2, History, Layers, ArrowRight } from 'lucide-react';
+import { Calculator, Sparkles, CheckCircle2, History, Layers, ArrowRight, Trash2 } from 'lucide-react';
 import { FabricEstimate } from '@/types/database.types';
 
 export default function FabricEstimatorPage() {
-  const { boms, generateFabricEstimate, fabricEstimates } = useFactory();
+  const { boms, generateFabricEstimate, fabricEstimates, deleteFabricEstimate } = useFactory();
   const [bomId, setBomId] = useState(boms[0]?.id || '');
   const [requestedQty, setRequestedQty] = useState('500');
   const [currentEstimate, setCurrentEstimate] = useState<FabricEstimate | null>(null);
@@ -218,6 +218,7 @@ export default function FabricEstimatorPage() {
                 <th className="py-3 px-4">Fabric Meters</th>
                 <th className="py-3 px-4">Total Cost</th>
                 <th className="py-3 px-4 text-right">Landed Cost / Pc</th>
+                <th className="py-3 px-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -237,6 +238,19 @@ export default function FabricEstimatorPage() {
                   </td>
                   <td className="py-3 px-4 text-right font-extrabold text-emerald-400">
                     {formatINR(est.result.estimated_cost_per_piece)}
+                  </td>
+                  <td className="py-3 px-4 text-right">
+                    <button
+                      onClick={() => {
+                        if (confirm('Delete this estimate calculation log?')) {
+                          deleteFabricEstimate(est.id);
+                        }
+                      }}
+                      className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                      title="Delete Estimate Log"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </td>
                 </tr>
               ))}
