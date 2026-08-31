@@ -31,6 +31,7 @@ import {
   BatchSizeLine,
   BatchStageTransfer,
   BatchWriteOff,
+  BatchMaterialConsumption,
   JobWorker,
   RoadChallan,
   RoadChallanLot,
@@ -151,7 +152,7 @@ interface FactoryContextType {
   recordPaymentOut: (data: { party_id: string; purchase_bill_id?: string; amount: number; mode: PaymentMode; reference_no?: string; notes?: string }) => PaymentOut;
   createProductionJob: (data: Partial<ProductionJob>) => ProductionJob;
   
-  // 100% Typable Production Batch Creator
+  // 100% Typable Production Batch Creator with Raw Material Cutting Mapping
   createProductionBatch: (data: {
     batch_no?: string;
     style?: string;
@@ -162,7 +163,21 @@ interface FactoryContextType {
     product_id?: string;
     production_job_id?: string;
     notes?: string;
+    cuttingMaterials?: Array<{
+      material_id: string;
+      qty_used: number;
+      scrap_qty?: number;
+    }>;
   }, sizeLines: Array<{ size: string; qty: number; colour?: string }>) => ProductionBatch;
+
+  recordBatchCuttingMaterial: (
+    batchId: string,
+    data: {
+      material_id: string;
+      qty_used: number;
+      scrap_qty?: number;
+    }
+  ) => BatchMaterialConsumption;
 
   moveBatchStage: (batchId: string, toStage: FactoryStage, sentQty: number, isOutsideVendor?: boolean, vendorId?: string, notes?: string) => BatchStageTransfer;
   receiveBatchStage: (transferId: string, receivedQty: number, notes?: string) => { success: boolean; variance: number };
@@ -1011,7 +1026,7 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     return newJob;
   }, [productionJobs.length, factory.id, currentProfile.id, parties]);
 
-  // 100% TYPABLE PRODUCTION BATCH CREATOR
+  // 100% TYPABLE PRODUCTION BATCH CREATOR WITH RAW MATERIAL CUTTING DEDUCTION
   const createProductionBatch = useCallback((
     data: {
       batch_no?: string;
@@ -1023,6 +1038,11 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
       product_id?: string;
       production_job_id?: string;
       notes?: string;
+      cuttingMaterials?: Array<{
+        material_id: string;
+        qty_used: number;
+        scrap_qty?: number;
+      }>;
     },
     sizeLines: Array<{ size: string; qty: number; colour?: string }>
   ): ProductionBatch => {
@@ -1063,6 +1083,61 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
 
     const totalCutQty = sizes.reduce((sum, s) => sum + s.qty, 0);
 
+    // Process Cutting Stage Raw Material Consumption & Realtime Deductions
+    const consumptions: BatchMaterialConsumption[] = [];
+    const ledgerEntries: InventoryLedger[] = [];
+
+    if (data.cuttingMaterials && data.cuttingMaterials.length > 0) {
+      data.cuttingMaterials.forEach((cm) => {
+        const mat = materials.find((m) => m.id === cm.material_id);
+        if (mat) {
+          const usedQty = Number(cm.qty_used) || 0;
+          const scrapQty = Number(cm.scrap_qty) || 0;
+          const totalDeduct = usedQty + scrapQty;
+          const unitSym = units.find((u) => u.id === mat.unit_id)?.symbol || 'kg';
+          const perPieceGrams = totalCutQty > 0 ? Math.round(((usedQty * 1000) / totalCutQty) * 10) / 10 : 0;
+
+          consumptions.push({
+            id: crypto.randomUUID(),
+            factory_id: factory.id,
+            batch_id: batchId,
+            material_id: mat.id,
+            material_name: mat.name,
+            lot_no: mat.lot_no,
+            qty_used: usedQty,
+            unit_symbol: unitSym,
+            scrap_qty: scrapQty,
+            consumption_per_piece: perPieceGrams,
+            recorded_by: currentProfile.id,
+            recorded_at: new Date().toISOString(),
+            material: mat,
+          });
+
+          // Deduct from material inventory
+          setMaterials((prev) =>
+            prev.map((m) => (m.id === mat.id ? { ...m, qty_on_hand: Math.max(0, m.qty_on_hand - totalDeduct) } : m))
+          );
+
+          ledgerEntries.push({
+            id: crypto.randomUUID(),
+            factory_id: factory.id,
+            item_type: 'material',
+            item_id: mat.id,
+            change_qty: -totalDeduct,
+            reason: `Batch ${batchNo} Cutting Lay Consumption (Lot ${mat.lot_no})`,
+            ref_table: 'production_batches',
+            ref_id: batchId,
+            created_by: currentProfile.id,
+            created_at: new Date().toISOString(),
+          });
+        }
+      });
+
+      if (ledgerEntries.length > 0) {
+        setInventoryLedger((prev) => [...ledgerEntries, ...prev]);
+      }
+    }
+
     const newBatch: ProductionBatch = {
       id: batchId,
       factory_id: factory.id,
@@ -1085,11 +1160,86 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
       size_lines: sizes,
       transfers: [],
       write_offs: [],
+      material_consumptions: consumptions,
     };
 
     setBatches((prev) => [newBatch, ...prev]);
     return newBatch;
-  }, [factory.id, currentProfile.id, products, productionJobs, addProduct]);
+  }, [factory.id, currentProfile.id, products, productionJobs, materials, units, addProduct]);
+
+  // Record Cutting Material Consumption for existing batch
+  const recordBatchCuttingMaterial = useCallback((
+    batchId: string,
+    data: {
+      material_id: string;
+      qty_used: number;
+      scrap_qty?: number;
+    }
+  ): BatchMaterialConsumption => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) throw new Error('Batch not found');
+
+    const mat = materials.find((m) => m.id === data.material_id);
+    if (!mat) throw new Error('Raw material not found');
+
+    const usedQty = Number(data.qty_used) || 0;
+    const scrapQty = Number(data.scrap_qty) || 0;
+    const totalDeduct = usedQty + scrapQty;
+    const unitSym = units.find((u) => u.id === mat.unit_id)?.symbol || 'kg';
+    const totalCut = batch.initial_qty || batch.current_qty || 1;
+    const perPieceGrams = Math.round(((usedQty * 1000) / totalCut) * 10) / 10;
+
+    const consumption: BatchMaterialConsumption = {
+      id: crypto.randomUUID(),
+      factory_id: factory.id,
+      batch_id: batchId,
+      material_id: mat.id,
+      material_name: mat.name,
+      lot_no: mat.lot_no,
+      qty_used: usedQty,
+      unit_symbol: unitSym,
+      scrap_qty: scrapQty,
+      consumption_per_piece: perPieceGrams,
+      recorded_by: currentProfile.id,
+      recorded_at: new Date().toISOString(),
+      material: mat,
+    };
+
+    // 1. Deduct stock from material on hand
+    setMaterials((prev) =>
+      prev.map((m) => (m.id === mat.id ? { ...m, qty_on_hand: Math.max(0, m.qty_on_hand - totalDeduct) } : m))
+    );
+
+    // 2. Add to ledger
+    const ledgerEntry: InventoryLedger = {
+      id: crypto.randomUUID(),
+      factory_id: factory.id,
+      item_type: 'material',
+      item_id: mat.id,
+      change_qty: -totalDeduct,
+      reason: `Batch ${batch.batch_no} Cutting Lay Consumption (Lot ${mat.lot_no})`,
+      ref_table: 'production_batches',
+      ref_id: batchId,
+      created_by: currentProfile.id,
+      created_at: new Date().toISOString(),
+    };
+    setInventoryLedger((prev) => [ledgerEntry, ...prev]);
+
+    // 3. Attach to batch
+    setBatches((prev) =>
+      prev.map((b) => {
+        if (b.id === batchId) {
+          return {
+            ...b,
+            material_consumptions: [consumption, ...(b.material_consumptions || [])],
+          };
+        }
+        return b;
+      })
+    );
+
+    return consumption;
+  }, [batches, materials, units, factory.id, currentProfile.id]);
 
   // Floor Loop Step 1: Move Stage
   const moveBatchStage = useCallback((
@@ -1886,8 +2036,18 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
   }, [paymentsOut]);
 
   const deleteProductionBatch = useCallback((id: string) => {
+    const batch = batches.find((b) => b.id === id);
+    if (batch && batch.material_consumptions) {
+      // Restore raw material stocks
+      batch.material_consumptions.forEach((cm) => {
+        const totalRestore = cm.qty_used + (cm.scrap_qty || 0);
+        setMaterials((prev) =>
+          prev.map((m) => (m.id === cm.material_id ? { ...m, qty_on_hand: m.qty_on_hand + totalRestore } : m))
+        );
+      });
+    }
     setBatches((prev) => prev.filter((b) => b.id !== id));
-  }, []);
+  }, [batches]);
 
   const deleteProductionJob = useCallback((id: string) => {
     setProductionJobs((prev) => prev.filter((j) => j.id !== id));
@@ -1950,6 +2110,7 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         recordPaymentOut,
         createProductionJob,
         createProductionBatch,
+        recordBatchCuttingMaterial,
         moveBatchStage,
         receiveBatchStage,
         recordBatchWriteOff,

@@ -410,6 +410,23 @@ export interface ProductionBatch {
   size_lines?: BatchSizeLine[];
   transfers?: BatchStageTransfer[];
   write_offs?: BatchWriteOff[];
+  material_consumptions?: BatchMaterialConsumption[];
+}
+
+export interface BatchMaterialConsumption {
+  id: string;
+  factory_id: string;
+  batch_id: string;
+  material_id: string;
+  material_name: string;
+  lot_no: string;
+  qty_used: number; // in KG or Meters
+  unit_symbol: string; // 'kg', 'mtr', 'pcs'
+  scrap_qty?: number;
+  consumption_per_piece?: number; // Grams/pc or Meters/pc
+  recorded_by: string;
+  recorded_at: string;
+  material?: Material;
 }
 
 export interface BatchSizeLine {

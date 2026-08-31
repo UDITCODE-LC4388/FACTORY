@@ -3,13 +3,34 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR } from '@/lib/gst';
-import { Boxes, Plus, Search, AlertTriangle, CheckCircle2, X, Trash2 } from 'lucide-react';
+import {
+  Boxes,
+  Plus,
+  Search,
+  AlertTriangle,
+  CheckCircle2,
+  X,
+  Trash2,
+  Scissors,
+  Layers,
+  ArrowRight,
+  TrendingDown,
+} from 'lucide-react';
 import { Material } from '@/types/database.types';
 
 export default function MaterialsPage() {
-  const { materials, addMaterial, deleteMaterial, units, currentProfile } = useFactory();
+  const {
+    materials,
+    batches,
+    addMaterial,
+    deleteMaterial,
+    units,
+    currentProfile,
+  } = useFactory();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTraceMaterial, setSelectedTraceMaterial] = useState<Material | null>(null);
 
   // Form State
   const [name, setName] = useState('');
@@ -47,6 +68,23 @@ export default function MaterialsPage() {
 
   const canEdit = ['owner', 'master', 'inventory_manager', 'purchase'].includes(currentProfile.role);
 
+  // Compute live cutting usages for the selected material
+  const materialCuttingUsages = selectedTraceMaterial
+    ? batches.flatMap((b) =>
+        (b.material_consumptions || [])
+          .filter((mc) => mc.material_id === selectedTraceMaterial.id || mc.lot_no === selectedTraceMaterial.lot_no)
+          .map((mc) => ({
+            batch: b,
+            consumption: mc,
+          }))
+      )
+    : [];
+
+  const totalConsumedInCutting = materialCuttingUsages.reduce(
+    (sum, item) => sum + item.consumption.qty_used + (item.consumption.scrap_qty || 0),
+    0
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -54,10 +92,10 @@ export default function MaterialsPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             <Boxes className="h-6 w-6 text-blue-400" />
-            Raw Materials & Trims Inventory
+            Raw Materials & Fabric Inventory
           </h1>
           <p className="text-xs sm:text-sm text-slate-400">
-            Fabrics, threads, buttons, polybags, and care labels with lot tracking and reorder limits
+            Live mapping between inward raw materials (KG/Meters) and cutting batch consumption with realtime stock deduction
           </p>
         </div>
 
@@ -67,7 +105,7 @@ export default function MaterialsPage() {
             className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition self-start sm:self-auto"
           >
             <Plus className="h-4 w-4" />
-            <span>Add Raw Material</span>
+            <span>Add Raw Material / Inward Lot</span>
           </button>
         )}
       </div>
@@ -91,16 +129,24 @@ export default function MaterialsPage() {
             <thead className="bg-slate-850/80 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400">
               <tr>
                 <th className="py-3.5 px-4">Material / Description</th>
-                <th className="py-3.5 px-4">Lot / Batch #</th>
+                <th className="py-3.5 px-4">Lot / Roll #</th>
                 <th className="py-3.5 px-4">Unit Cost (Rate)</th>
                 <th className="py-3.5 px-4">Stock Status</th>
                 <th className="py-3.5 px-4 text-right">Available On-Hand</th>
+                <th className="py-3.5 px-4 text-right">Cutting Traceability</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {filteredMaterials.map((mat) => {
                 const unit = units.find((u) => u.id === mat.unit_id);
                 const isLow = mat.qty_on_hand <= mat.low_stock_threshold;
+
+                // Find batches using this material
+                const cutCount = batches.filter((b) =>
+                  (b.material_consumptions || []).some(
+                    (mc) => mc.material_id === mat.id || mc.lot_no === mat.lot_no
+                  )
+                ).length;
 
                 return (
                   <tr key={mat.id} className="hover:bg-slate-800/40 transition">
@@ -117,7 +163,7 @@ export default function MaterialsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-slate-300">
+                    <td className="py-3.5 px-4 font-mono font-bold text-blue-400">
                       {mat.lot_no || '—'}
                     </td>
                     <td className="py-3.5 px-4 font-bold text-white">
@@ -138,19 +184,27 @@ export default function MaterialsPage() {
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
+                      <span
+                        className={`text-sm font-extrabold ${
+                          isLow ? 'text-rose-400' : 'text-emerald-400'
+                        }`}
+                      >
+                        {mat.qty_on_hand.toLocaleString()}
+                      </span>
+                      <span className="text-slate-400 text-xs ml-1 font-semibold">
+                        {unit?.symbol || 'units'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <div>
-                          <span
-                            className={`text-sm font-extrabold ${
-                              isLow ? 'text-rose-400' : 'text-emerald-400'
-                            }`}
-                          >
-                            {mat.qty_on_hand.toLocaleString()}
-                          </span>
-                          <span className="text-slate-400 text-xs ml-1 font-semibold">
-                            {unit?.symbol || 'units'}
-                          </span>
-                        </div>
+                        <button
+                          onClick={() => setSelectedTraceMaterial(mat)}
+                          className="px-2.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white font-bold text-[11px] flex items-center gap-1.5 border border-blue-500/30 transition shadow-sm"
+                          title="View live cutting batch mapping for this material"
+                        >
+                          <Scissors className="h-3.5 w-3.5" />
+                          <span>Trace Cutting ({cutCount} Batches)</span>
+                        </button>
 
                         <button
                           onClick={() => {
@@ -159,7 +213,7 @@ export default function MaterialsPage() {
                             }
                           }}
                           title="Delete Material"
-                          className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                          className="p-1.5 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -173,14 +227,16 @@ export default function MaterialsPage() {
         </div>
       </div>
 
-      {/* Add Material Modal */}
+      {/* ------------------------------------------------------------------ */}
+      {/* MODAL 1: ADD NEW RAW MATERIAL / INWARD LOT */}
+      {/* ------------------------------------------------------------------ */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/50">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Boxes className="h-4 w-4 text-blue-400" />
-                Add New Raw Material
+                Add New Raw Material / Inward Lot
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -205,10 +261,11 @@ export default function MaterialsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Lot / Inward #</label>
+                  <label className="font-semibold text-slate-300">Lot / Roll Number *</label>
                   <input
                     type="text"
-                    placeholder="LOT-2026-01"
+                    required
+                    placeholder="e.g. LOT-2601"
                     value={lotNo}
                     onChange={(e) => setLotNo(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -216,7 +273,7 @@ export default function MaterialsPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Measuring Unit</label>
+                  <label className="font-semibold text-slate-300">Unit of Measurement</label>
                   <select
                     value={unitId}
                     onChange={(e) => setUnitId(e.target.value)}
@@ -233,11 +290,11 @@ export default function MaterialsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Cost Per Unit (₹) *</label>
+                  <label className="font-semibold text-slate-300">Cost / Rate per Unit (₹)</label>
                   <input
                     type="number"
-                    required
-                    placeholder="145.00"
+                    step="any"
+                    placeholder="e.g. 320"
                     value={costPerUnit}
                     onChange={(e) => setCostPerUnit(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -245,24 +302,27 @@ export default function MaterialsPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Initial Stock Qty</label>
+                  <label className="font-semibold text-slate-300">Initial Inward Quantity *</label>
                   <input
                     type="number"
-                    placeholder="0"
+                    step="any"
+                    required
+                    placeholder="e.g. 100 (in KG / Mtr)"
                     value={qtyOnHand}
                     onChange={(e) => setQtyOnHand(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Low Stock Reorder Threshold</label>
+                <label className="font-semibold text-slate-300">Low Stock Alert Limit</label>
                 <input
                   type="number"
+                  placeholder="20"
                   value={lowStockThreshold}
                   onChange={(e) => setLowStockThreshold(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -276,12 +336,129 @@ export default function MaterialsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md shadow-blue-600/30"
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/30"
                 >
-                  Save Material
+                  Save Inward Lot
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* MODAL 2: LIVE CUTTING TRACEABILITY & BATCH CONSUMPTION AUDIT */}
+      {/* ------------------------------------------------------------------ */}
+      {selectedTraceMaterial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-3xl max-h-[90vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/80">
+              <div className="flex items-center gap-2">
+                <Scissors className="h-5 w-5 text-blue-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Live Cutting Traceability: {selectedTraceMaterial.name}
+                  </h3>
+                  <span className="text-[11px] font-mono text-blue-400">
+                    Lot #{selectedTraceMaterial.lot_no}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedTraceMaterial(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 text-xs overflow-y-auto">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-slate-850 border border-slate-800">
+                  <span className="text-slate-400 text-[11px] font-semibold block">Available Stock On-Hand</span>
+                  <p className="text-lg font-extrabold text-emerald-400 mt-0.5">
+                    {selectedTraceMaterial.qty_on_hand.toLocaleString()} {units.find((u) => u.id === selectedTraceMaterial.unit_id)?.symbol || 'kg'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-850 border border-slate-800">
+                  <span className="text-slate-400 text-[11px] font-semibold block">Total Consumed in Cutting</span>
+                  <p className="text-lg font-extrabold text-amber-400 mt-0.5">
+                    {totalConsumedInCutting.toLocaleString()} {units.find((u) => u.id === selectedTraceMaterial.unit_id)?.symbol || 'kg'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-850 border border-slate-800">
+                  <span className="text-slate-400 text-[11px] font-semibold block">Total Batches Linked</span>
+                  <p className="text-lg font-extrabold text-blue-400 mt-0.5">
+                    {materialCuttingUsages.length} Batches
+                  </p>
+                </div>
+              </div>
+
+              {/* Cutting Usage Breakdown Table */}
+              <div>
+                <h4 className="font-bold text-white text-xs mb-2 flex items-center gap-1.5">
+                  <Layers className="h-4 w-4 text-blue-400" />
+                  Batches Where This Raw Material Lot Was Cut:
+                </h4>
+
+                {materialCuttingUsages.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 bg-slate-850/60 rounded-2xl border border-slate-800">
+                    <Scissors className="h-8 w-8 mx-auto mb-2 text-slate-600" />
+                    No cutting batches have consumed this raw material lot yet.
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      When creating a batch in &ldquo;Make &gt; Batches&rdquo;, select this raw material in the Cutting section to automatically link and deduct stock.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-slate-800 overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-800 text-slate-300 font-semibold border-b border-slate-700">
+                        <tr>
+                          <th className="py-2.5 px-3">Batch #</th>
+                          <th className="py-2.5 px-3">Garment Style</th>
+                          <th className="py-2.5 px-3">Pieces Cut</th>
+                          <th className="py-2.5 px-3 text-right">Qty Used ({units.find((u) => u.id === selectedTraceMaterial.unit_id)?.symbol || 'kg'})</th>
+                          <th className="py-2.5 px-3 text-right">Scrap / Wastage</th>
+                          <th className="py-2.5 px-3 text-right">Yield (g/pc)</th>
+                          <th className="py-2.5 px-3">Cut Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 bg-slate-850/50">
+                        {materialCuttingUsages.map(({ batch, consumption }) => (
+                          <tr key={consumption.id} className="hover:bg-slate-800/60 transition">
+                            <td className="py-2.5 px-3 font-mono font-bold text-blue-400">
+                              {batch.batch_no}
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-white">
+                              {batch.style || batch.article_code}
+                              <p className="text-[10px] text-slate-400 font-normal">{batch.colour}</p>
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-slate-200">
+                              {batch.initial_qty} Pcs
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-extrabold text-amber-400">
+                              {consumption.qty_used} {consumption.unit_symbol}
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-rose-400 font-semibold">
+                              {consumption.scrap_qty ? `${consumption.scrap_qty} ${consumption.unit_symbol}` : '—'}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-400">
+                              {consumption.consumption_per_piece ? `${consumption.consumption_per_piece} g/pc` : '—'}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-400 text-[11px]">
+                              {consumption.recorded_at ? consumption.recorded_at.split('T')[0] : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

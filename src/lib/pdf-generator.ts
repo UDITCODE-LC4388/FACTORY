@@ -488,12 +488,41 @@ export async function generateJobCardPDF(
     headStyles: { fillColor: [71, 85, 105], textColor: 255, fontSize: 9 },
   });
 
-  const nextY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 10 : 130;
+  let nextY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 120;
+
+  // Raw Material Cutting Inward Mapping if present
+  if (batch.material_consumptions && batch.material_consumptions.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Raw Material / Inward KG Cutting Traceability:', 14, nextY);
+
+    const matRows = batch.material_consumptions.map((mc) => [
+      mc.material_name,
+      mc.lot_no,
+      `${mc.qty_used} ${mc.unit_symbol}`,
+      mc.scrap_qty ? `${mc.scrap_qty} ${mc.unit_symbol}` : '—',
+      mc.consumption_per_piece ? `${mc.consumption_per_piece} g/pc` : '—',
+      mc.recorded_at ? mc.recorded_at.split('T')[0] : '—',
+    ]);
+
+    autoTable(doc, {
+      startY: nextY + 3,
+      head: [['Material Description', 'Lot / Roll #', 'Consumed Qty', 'Scrap / End-bit', 'Average Yield', 'Cut Date']],
+      body: matRows,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+    });
+
+    nextY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : nextY + 25;
+  }
 
   // Stage Tracking Sign-off Grid (All 7 Stages)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('Floor Stage Route & Quality Sign-Off:', 14, nextY);
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Floor Stage Route & Quality Sign-Off (All 7 Stages):', 14, nextY);
 
   const stageGrid = [
     ['1. Cutting', 'In-House', `${batch.initial_qty}`, '', `${batch.initial_qty}`, '', 'Passed'],
