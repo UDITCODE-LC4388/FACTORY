@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FactoryOS — Integrated Textile & Garment ERP
 
-## Getting Started
+> **Modern Textile & Garment Manufacturing Floor ERP, Production Tracking, GST Billing, BOM Inventory & Real-Time Sync.**
 
-First, run the development server:
+---
 
+## 🚀 Key Modules & Capabilities
+
+### 1. Sell Module (Sales & Tax Invoices)
+- **Parties & Customers:** Buyer directory with GSTIN validation and automatic State Code determination (Intra-state vs Inter-state).
+- **Products Catalog:** Garment SKUs, HSN codes, GST %, and real-time finished goods inventory.
+- **Sale Orders:** Purchase orders with 1-Click atomic conversion to GST Invoices.
+- **GST Invoices:** Auto CGST/SGST/IGST tax calculation, downloadable jsPDF Tax Invoices, payment recording, and automated WhatsApp invoice triggers.
+- **Payments-In Ledger:** Customer receipts entry with balance tracking.
+
+### 2. Make Module (Production Floor & Traceability)
+- **Floor Batches & Trolleys:** Piece-level tracking across sizes (`S`, `M`, `L`, `XL`), physical QR Traveler Cards, and defect scrap logs.
+- **Strict 2-Step Handoff Loop:** `Move` initiates transfer in `awaiting_receive` state; `Receive` at destination confirms counted pieces and automatically logs any variance/transit loss.
+- **Make IQ Jobs:** Internal stock runs and client contract manufacturing job orders.
+- **Visual Floor Kanban:** Live pipeline tracking across all 6 departments: `Cutting`, `Stitching`, `Washing`, `QC`, `Packing`, `Dispatch`.
+
+### 3. Inventory & Buy Module
+- **Raw Materials & Trims:** Fabrics (meters), sewing threads (cones), polybags, care labels with lot tracking and reorder warnings.
+- **BOM Recipes:** Bill of Materials calculating fabric consumption, labor costs, and overhead percentages.
+- **Fabric Estimator:** Simulation engine computing exact fabric yardage and trims needed for any requested garment run.
+- **Single Source of Truth Ledger:** Immutable double-entry inventory ledger for all stock inward/outward events.
+- **Buy Procurement:** Supplier Purchase Orders, atomic Purchase Bill goods receipt, and Payments-Out.
+
+### 4. Agents & Automation
+- **WhatsApp Cloud API Hub:** Meta Graph API v19.0 notification engine for invoice dispatches and order alerts.
+- **Floor Voice Assistant:** Web Speech natural language voice input in Hindi & English (e.g. *"Move batch 2601 to washing 248 pieces"*).
+
+### 5. Costing & Reports
+- **Live Landed Costing:** Real-time piece costing formula: $(\sum \text{BOM}) + \text{Labor} + \text{Overhead } \%$.
+- **Packing Lists:** Carton breakdowns by sizes and dispatch slips.
+- **Bulk CSV Importer:** Excel/CSV importer with row-by-row validation error table.
+- **Mobile PWA Suite:** 1-Click installable mobile app with camera QR scanning.
+
+---
+
+## 👥 Factory Team Roles
+
+| Member | Role | Capabilities |
+| :--- | :--- | :--- |
+| **Mudit Singhi** | `owner` | Full Administrative & Financial Master Access across all modules |
+| **Uday Da** | `master` | Masterji & Production Lead (Batches, Jobs, BOM, Materials, Floor Kanban) |
+| **Prem** | `helper` | Floor Operator (QR Code Scanner, Stage Move & Receive, Voice Assistant) |
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework:** Next.js 14+ (App Router, Turbopack, React 19)
+- **Styling:** Tailwind CSS & Lucide Icons
+- **Database:** Supabase PostgreSQL with Row Level Security (RLS) & Atomic RPCs
+- **Realtime:** Supabase WebSockets & BroadcastChannel cross-device synchronization
+- **PDF & QR Engine:** `jspdf`, `jspdf-autotable`, `qrcode`, `html5-qrcode`
+
+---
+
+## 📦 Getting Started
+
+### 1. Clone & Install
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/UDITCODE-LC4388/FACTORY.git
+cd FACTORY
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure Environment Variables
+Create a `.env.local` file:
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Run Database Migrations
+Copy the contents of [`supabase/SCHEMA_MIGRATION_CONSOLIDATED.sql`](supabase/SCHEMA_MIGRATION_CONSOLIDATED.sql) into your **Supabase SQL Editor** and click **RUN**.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 4. Start Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) (or open on your phone via [http://localhost:3000/download](http://localhost:3000/download)).
