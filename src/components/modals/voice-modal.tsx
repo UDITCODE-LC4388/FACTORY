@@ -149,12 +149,12 @@ export function VoiceModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
             <div className="grid grid-cols-1 gap-1.5 text-xs">
               <button
                 onClick={() => {
-                  setManualInput('Move batch 2601 to washing 248 pieces');
-                  handleExecute('Move batch 2601 to washing 248 pieces');
+                  setManualInput('Move batch 2601 to ironing 248 pieces');
+                  handleExecute('Move batch 2601 to ironing 248 pieces');
                 }}
                 className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-left text-slate-700 dark:text-slate-300 transition"
               >
-                &bull; &ldquo;Move batch 2601 to washing 248 pieces&rdquo;
+                &bull; &ldquo;Move batch 2601 to ironing 248 pieces&rdquo;
               </button>
               <button
                 onClick={() => {

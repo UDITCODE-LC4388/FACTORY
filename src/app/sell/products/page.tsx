@@ -134,7 +134,7 @@ export default function ProductsPage() {
                   <td className="py-3.5 px-4 text-right">
                     <span
                       className={`font-bold text-sm ${
-                        p.stock_qty <= p.low_stock_threshold
+                        p.stock_qty <= (p.low_stock_threshold || 10)
                           ? 'text-amber-400'
                           : 'text-emerald-400'
                       }`}

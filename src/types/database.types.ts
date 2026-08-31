@@ -11,7 +11,7 @@ export type UserRole =
 export type FactoryStage =
   | 'cutting'
   | 'stitching'
-  | 'washing'
+  | 'ironing'
   | 'qc'
   | 'packing'
   | 'dispatch';
@@ -28,14 +28,17 @@ export type TransferStatus = 'awaiting_receive' | 'received';
 export type VoiceCmdStatus = 'pending' | 'executed' | 'needs_review' | 'failed';
 export type ImportStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
+export type ChallanStatus = 'dispatched' | 'partially_returned' | 'completed';
+export type JobWorkerProcess = 'making' | 'screen_printing' | 'digital_printing' | 'dyeing' | 'embroidery' | 'ironing' | 'finishing';
+
 export interface Factory {
   id: string;
   name: string;
   gstin: string;
   state: string;
   state_code: string;
-  address: string;
-  phone: string;
+  address?: string;
+  phone?: string;
   created_at: string;
 }
 
@@ -43,9 +46,9 @@ export interface Profile {
   id: string;
   factory_id: string;
   full_name: string;
-  phone: string;
+  phone?: string;
   role: UserRole;
-  assigned_department?: FactoryStage | null;
+  assigned_department?: FactoryStage;
   is_active: boolean;
   created_at: string;
 }
@@ -56,11 +59,11 @@ export interface Party {
   name: string;
   type: PartyType;
   phone: string;
-  gstin: string;
+  gstin?: string;
   state: string;
   state_code: string;
-  address: string;
-  balance: number; // positive = receivable (customer owes us), negative = payable (we owe vendor)
+  address?: string;
+  balance: number;
   created_at: string;
 }
 
@@ -68,7 +71,7 @@ export interface Category {
   id: string;
   factory_id: string;
   name: string;
-  type: 'product' | 'material';
+  type: 'product' | 'material' | 'service';
   created_at: string;
 }
 
@@ -85,13 +88,13 @@ export interface Product {
   factory_id: string;
   name: string;
   sku: string;
-  category_id: string;
-  unit_id: string;
+  category_id?: string;
+  unit_id?: string;
   sale_price: number;
   hsn_code: string;
   gst_percent: number;
   stock_qty: number;
-  low_stock_threshold: number;
+  low_stock_threshold?: number;
   created_at: string;
   category?: Category;
   unit?: Unit;
@@ -101,8 +104,8 @@ export interface Service {
   id: string;
   factory_id: string;
   name: string;
+  sac_code: string;
   rate: number;
-  hsn_code: string;
   gst_percent: number;
   created_at: string;
 }
@@ -116,7 +119,7 @@ export interface SaleOrder {
   status: OrderStatus;
   notes?: string;
   total_amount: number;
-  created_by?: string;
+  created_by: string;
   created_at: string;
   party?: Party;
   items?: SaleOrderItem[];
@@ -127,12 +130,12 @@ export interface SaleOrderItem {
   factory_id: string;
   sale_order_id: string;
   product_id?: string;
+  service_id?: string;
   description: string;
   hsn_code: string;
   qty: number;
   price: number;
   gst_percent: number;
-  product?: Product;
 }
 
 export interface Invoice {
@@ -152,7 +155,7 @@ export interface Invoice {
   total: number;
   paid_amount: number;
   pdf_url?: string;
-  created_by?: string;
+  created_by: string;
   created_at: string;
   party?: Party;
   items?: InvoiceItem[];
@@ -163,6 +166,7 @@ export interface InvoiceItem {
   factory_id: string;
   invoice_id: string;
   product_id?: string;
+  service_id?: string;
   description: string;
   hsn_code: string;
   qty: number;
@@ -173,7 +177,6 @@ export interface InvoiceItem {
   sgst: number;
   igst: number;
   total: number;
-  product?: Product;
 }
 
 export interface PaymentIn {
@@ -186,7 +189,7 @@ export interface PaymentIn {
   date: string;
   reference_no?: string;
   notes?: string;
-  recorded_by?: string;
+  recorded_by: string;
   created_at: string;
   party?: Party;
   invoice?: Invoice;
@@ -201,7 +204,7 @@ export interface PurchaseOrder {
   status: PurchaseStatus;
   total_amount: number;
   notes?: string;
-  created_by?: string;
+  created_by: string;
   created_at: string;
   party?: Party;
   items?: PurchaseOrderItem[];
@@ -232,7 +235,7 @@ export interface PurchaseBill {
   total: number;
   paid_amount: number;
   payment_status: PaymentStatus;
-  created_by?: string;
+  created_by: string;
   created_at: string;
   party?: Party;
   items?: PurchaseBillItem[];
@@ -251,7 +254,6 @@ export interface PurchaseBillItem {
   sgst: number;
   igst: number;
   total: number;
-  material?: Material;
 }
 
 export interface PaymentOut {
@@ -264,7 +266,7 @@ export interface PaymentOut {
   date: string;
   reference_no?: string;
   notes?: string;
-  recorded_by?: string;
+  recorded_by: string;
   created_at: string;
   party?: Party;
   purchase_bill?: PurchaseBill;
@@ -274,7 +276,7 @@ export interface Material {
   id: string;
   factory_id: string;
   name: string;
-  lot_no?: string;
+  lot_no: string;
   category_id?: string;
   unit_id?: string;
   cost_per_unit: number;
@@ -294,8 +296,8 @@ export interface BOM {
   overhead_percent: number;
   is_active: boolean;
   created_at: string;
-  product?: Product;
   lines?: BOMLine[];
+  product?: Product;
 }
 
 export interface BOMLine {
@@ -330,7 +332,7 @@ export interface FabricEstimate {
       cost: number;
     }>;
   };
-  requested_by?: string;
+  requested_by: string;
   created_at: string;
 }
 
@@ -338,10 +340,9 @@ export interface PackingList {
   id: string;
   factory_id: string;
   number: string;
+  sale_order_id?: string;
   invoice_id?: string;
-  production_job_id?: string;
   status: 'draft' | 'dispatched';
-  created_by?: string;
   created_at: string;
   items?: PackingListItem[];
 }
@@ -352,8 +353,8 @@ export interface PackingListItem {
   packing_list_id: string;
   product_id: string;
   carton_no: string;
-  size?: string;
-  colour?: string;
+  size: string;
+  colour: string;
   qty: number;
   product?: Product;
 }
@@ -367,23 +368,7 @@ export interface InventoryLedger {
   reason: string;
   ref_table?: string;
   ref_id?: string;
-  created_by?: string;
-  created_at: string;
-}
-
-export interface ImportJob {
-  id: string;
-  factory_id: string;
-  entity_type: 'parties' | 'materials' | 'products';
-  file_url?: string;
-  status: ImportStatus;
-  row_count: number;
-  error_log: Array<{
-    row: number;
-    error: string;
-    data: Record<string, unknown>;
-  }>;
-  created_by?: string;
+  created_by: string;
   created_at: string;
 }
 
@@ -396,7 +381,7 @@ export interface ProductionJob {
   status: JobStatus;
   due_date?: string;
   notes?: string;
-  created_by?: string;
+  created_by: string;
   created_at: string;
   party?: Party;
   batches?: ProductionBatch[];
@@ -407,14 +392,17 @@ export interface ProductionBatch {
   factory_id: string;
   batch_no: string;
   production_job_id?: string;
-  product_id: string;
+  product_id?: string;
   style: string;
+  article_code?: string;
+  product_name?: string;
   colour: string;
+  fabric?: string;
   current_stage: FactoryStage;
   initial_qty: number;
   current_qty: number;
   qr_code_url?: string;
-  created_by?: string;
+  created_by: string;
   created_at: string;
   product?: Product;
   job?: ProductionJob;
@@ -443,13 +431,12 @@ export interface BatchStageTransfer {
   sent_qty: number;
   received_qty?: number;
   status: TransferStatus;
-  sent_by?: string;
+  sent_by: string;
   sent_at: string;
   received_by?: string;
   received_at?: string;
   notes?: string;
   vendor?: Party;
-  batch?: ProductionBatch;
 }
 
 export interface BatchWriteOff {
@@ -459,8 +446,83 @@ export interface BatchWriteOff {
   stage: FactoryStage;
   qty: number;
   reason: string;
-  recorded_by?: string;
+  recorded_by: string;
   recorded_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// ROAD CHALLAN & OUTSIDE JOB WORK ENTITIES
+// ---------------------------------------------------------------------------
+
+export interface JobWorker {
+  id: string;
+  factory_id: string;
+  name: string;
+  phone: string;
+  address?: string;
+  process_type: JobWorkerProcess;
+  default_rate?: number;
+  created_at: string;
+}
+
+export interface RoadChallan {
+  id: string;
+  factory_id: string;
+  challan_no: string;
+  challan_date: string;
+  job_worker_id: string;
+  process_type: JobWorkerProcess;
+  status: ChallanStatus;
+  photo_url?: string;
+  notes?: string;
+  completion_date?: string;
+  stamp_image?: string;
+  created_by: string;
+  created_at: string;
+  job_worker?: JobWorker;
+  lots?: RoadChallanLot[];
+}
+
+export interface RoadChallanLot {
+  id: string;
+  factory_id: string;
+  challan_id: string;
+  lot_no: string;
+  article: string;
+  color: string;
+  rate_per_pc: number;
+  sizes: RoadChallanSizeLine[];
+}
+
+export interface RoadChallanSizeLine {
+  id: string;
+  lot_id: string;
+  size: string;
+  dispatched_qty: number;
+  returned_qty: number | null;
+  shortage_qty: number | null;
+}
+
+export interface OutsideJobWork {
+  id: string;
+  factory_id: string;
+  challan_id?: string;
+  vendor_name: string;
+  phone: string;
+  process: JobWorkerProcess;
+  batch_no: string;
+  article: string;
+  pieces_sent: number;
+  pieces_returned: number;
+  rate_per_piece: number;
+  total_approx_cost: number;
+  dispatch_date: string;
+  expected_return_date?: string;
+  actual_return_date?: string;
+  status: 'sent' | 'in_process' | 'partially_received' | 'completed' | 'billed';
+  variance: number;
+  notes?: string;
+  created_at: string;
 }
 
 export interface WhatsAppLog {
@@ -471,7 +533,7 @@ export interface WhatsAppLog {
   message: string;
   ref_table?: string;
   ref_id?: string;
-  status: 'queued' | 'sent' | 'failed' | 'delivered';
+  status: 'queued' | 'sent' | 'delivered' | 'failed';
   response_payload?: Record<string, unknown>;
   sent_at: string;
 }
@@ -479,18 +541,9 @@ export interface WhatsAppLog {
 export interface VoiceCommandLog {
   id: string;
   factory_id: string;
-  user_id?: string;
+  user_id: string;
   transcript: string;
-  parsed_intent?: {
-    action: 'move_stage' | 'receive_stage' | 'write_off' | 'create_batch' | 'unknown';
-    batch_no?: string;
-    from_stage?: FactoryStage;
-    to_stage?: FactoryStage;
-    qty?: number;
-    reason?: string;
-    confidence: number;
-  };
-  action_taken?: string;
+  action_taken: string;
   status: VoiceCmdStatus;
   error_message?: string;
   created_at: string;
@@ -514,7 +567,7 @@ export interface BatchReconciliationView {
   batch_id: string;
   factory_id: string;
   batch_no: string;
-  product_id: string;
+  product_id?: string;
   current_stage: FactoryStage;
   original_qty: number;
   on_hand_qty: number;

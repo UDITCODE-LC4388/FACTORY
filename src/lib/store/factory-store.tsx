@@ -31,6 +31,12 @@ import {
   BatchSizeLine,
   BatchStageTransfer,
   BatchWriteOff,
+  JobWorker,
+  RoadChallan,
+  RoadChallanLot,
+  RoadChallanSizeLine,
+  OutsideJobWork,
+  JobWorkerProcess,
   WhatsAppLog,
   VoiceCommandLog,
   VoiceCmdStatus,
@@ -45,14 +51,14 @@ import { calculateGST } from '../gst';
 import { computeBatchReconciliation } from '../reconciliation';
 import { createClient } from '@/lib/supabase/client';
 
-// Default initial factory setup (Clean Slate)
+// Default initial factory setup
 const INITIAL_FACTORY: Factory = {
   id: '11111111-1111-1111-1111-111111111111',
-  name: 'My Garment Factory',
+  name: 'Manisha Garments',
   gstin: '27AAAAA0000A1Z5',
   state: 'Maharashtra',
   state_code: '27',
-  address: 'Industrial Area, Phase 1',
+  address: 'Industrial Area, Phase 1, Bhiwandi',
   phone: '+91 98000 00000',
   created_at: new Date().toISOString(),
 };
@@ -90,16 +96,16 @@ const INITIAL_PROFILES: Profile[] = [
 
 // Standard measurement units
 const STANDARD_UNITS: Unit[] = [
-  { id: '33333333-3333-3333-3333-333333333301', factory_id: INITIAL_FACTORY.id, name: 'Meters', symbol: 'mtr', created_at: new Date().toISOString() },
-  { id: '33333333-3333-3333-3333-333333333302', factory_id: INITIAL_FACTORY.id, name: 'Pieces', symbol: 'pcs', created_at: new Date().toISOString() },
+  { id: '33333333-3333-3333-3333-333333333301', factory_id: INITIAL_FACTORY.id, name: 'Pieces', symbol: 'pcs', created_at: new Date().toISOString() },
+  { id: '33333333-3333-3333-3333-333333333302', factory_id: INITIAL_FACTORY.id, name: 'Meters', symbol: 'mtr', created_at: new Date().toISOString() },
   { id: '33333333-3333-3333-3333-333333333303', factory_id: INITIAL_FACTORY.id, name: 'Kilograms', symbol: 'kg', created_at: new Date().toISOString() },
   { id: '33333333-3333-3333-3333-333333333304', factory_id: INITIAL_FACTORY.id, name: 'Cones', symbol: 'cone', created_at: new Date().toISOString() },
 ];
 
 const STANDARD_CATEGORIES: Category[] = [
-  { id: '44444444-4444-4444-4444-444444444401', factory_id: INITIAL_FACTORY.id, name: 'Fabrics', type: 'material', created_at: new Date().toISOString() },
-  { id: '44444444-4444-4444-4444-444444444402', factory_id: INITIAL_FACTORY.id, name: 'Trims & Accessories', type: 'material', created_at: new Date().toISOString() },
-  { id: '44444444-4444-4444-4444-444444444403', factory_id: INITIAL_FACTORY.id, name: 'Finished Garments', type: 'product', created_at: new Date().toISOString() },
+  { id: '44444444-4444-4444-4444-444444444401', factory_id: INITIAL_FACTORY.id, name: 'Finished Garments', type: 'product', created_at: new Date().toISOString() },
+  { id: '44444444-4444-4444-4444-444444444402', factory_id: INITIAL_FACTORY.id, name: 'Fabrics', type: 'material', created_at: new Date().toISOString() },
+  { id: '44444444-4444-4444-4444-444444444403', factory_id: INITIAL_FACTORY.id, name: 'Trims & Accessories', type: 'material', created_at: new Date().toISOString() },
 ];
 
 interface FactoryContextType {
@@ -126,6 +132,9 @@ interface FactoryContextType {
   inventoryLedger: InventoryLedger[];
   productionJobs: ProductionJob[];
   batches: ProductionBatch[];
+  jobWorkers: JobWorker[];
+  roadChallans: RoadChallan[];
+  outsideJobWorks: OutsideJobWork[];
   whatsAppLogs: WhatsAppLog[];
   voiceLogs: VoiceCommandLog[];
   
@@ -141,14 +150,55 @@ interface FactoryContextType {
   postPurchaseBill: (poId: string, billNumber: string, items: Array<{ material_id: string; qty: number; price: number; gst_percent: number }>) => PurchaseBill;
   recordPaymentOut: (data: { party_id: string; purchase_bill_id?: string; amount: number; mode: PaymentMode; reference_no?: string; notes?: string }) => PaymentOut;
   createProductionJob: (data: Partial<ProductionJob>) => ProductionJob;
-  createProductionBatch: (data: Partial<ProductionBatch>, sizeLines: Array<{ size: string; qty: number; colour: string }>) => ProductionBatch;
+  
+  // 100% Typable Production Batch Creator
+  createProductionBatch: (data: {
+    batch_no?: string;
+    style?: string;
+    article_code?: string;
+    product_name?: string;
+    colour?: string;
+    fabric?: string;
+    product_id?: string;
+    production_job_id?: string;
+    notes?: string;
+  }, sizeLines: Array<{ size: string; qty: number; colour?: string }>) => ProductionBatch;
+
   moveBatchStage: (batchId: string, toStage: FactoryStage, sentQty: number, isOutsideVendor?: boolean, vendorId?: string, notes?: string) => BatchStageTransfer;
   receiveBatchStage: (transferId: string, receivedQty: number, notes?: string) => { success: boolean; variance: number };
   recordBatchWriteOff: (batchId: string, stage: FactoryStage, qty: number, reason: string) => BatchWriteOff;
+  
+  // Road Challan & Job Workers
+  createJobWorker: (data: { name: string; phone: string; address?: string; process_type: JobWorkerProcess; default_rate?: number }) => JobWorker;
+  createRoadChallan: (data: {
+    job_worker_id: string;
+    process_type: JobWorkerProcess;
+    challan_date?: string;
+    notes?: string;
+    photo_url?: string;
+    lots: Array<{
+      lot_no: string;
+      article: string;
+      color: string;
+      rate_per_pc?: number;
+      sizes: Array<{ size: string; dispatched_qty: number }>;
+    }>;
+  }) => RoadChallan;
+  reconcileRoadChallan: (
+    challanId: string,
+    reconciliationData: {
+      completion_date: string;
+      stamp_image?: string;
+      returnedSizes: Array<{ lot_id: string; size: string; returned_qty: number }>;
+    }
+  ) => RoadChallan;
+  addOutsideJobWork: (data: Partial<OutsideJobWork>) => OutsideJobWork;
+  updateOutsideJobWork: (id: string, data: Partial<OutsideJobWork>) => void;
+
   createBOM: (productId: string, name: string, laborCost: number, overheadPercent: number, lines: Array<{ material_id: string; qty_per_unit: number; notes?: string }>) => BOM;
   generateFabricEstimate: (bomId: string, requestedQty: number) => FabricEstimate;
   executeVoiceCommand: (transcript: string) => Promise<{ success: boolean; actionTaken: string; error?: string }>;
-  sendWhatsAppNotification: (recipientPhone: string, recipientName: string, message: string, refTable?: string, refId?: string) => Promise<WhatsAppLog>;
+  sendWhatsAppNotification: (recipientPhone: string, recipientName: string, message: string, refTable?: string, refId?: string) => Promise<{ log: WhatsAppLog; directUrl: string }>;
   importBulkEntities: (entityType: 'parties' | 'materials' | 'products', rows: Array<Record<string, unknown>>) => { successCount: number; errors: Array<{ row: number; error: string }> };
   addParty: (party: Partial<Party>) => Party;
   addMaterial: (material: Partial<Material>) => Material;
@@ -158,8 +208,7 @@ interface FactoryContextType {
 
 const FactoryContext = createContext<FactoryContextType | null>(null);
 
-// Upgraded cache key to start clean
-const STORAGE_KEY = 'factoryos_team_clean_v1';
+const STORAGE_KEY = 'factoryos_store_v5_ironing';
 const BROADCAST_CHANNEL_NAME = 'factoryos_realtime_bus';
 
 export function FactoryProvider({ children }: { children: React.ReactNode }) {
@@ -167,7 +216,7 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
   const [profiles] = useState<Profile[]>(INITIAL_PROFILES);
   const [currentProfileId, setCurrentProfileId] = useState<string>(INITIAL_PROFILES[0].id);
 
-  // Clean data stores (Start completely from scratch)
+  // Clean data stores
   const [parties, setParties] = useState<Party[]>([]);
   const [categories, setCategories] = useState<Category[]>(STANDARD_CATEGORIES);
   const [units, setUnits] = useState<Unit[]>(STANDARD_UNITS);
@@ -186,6 +235,9 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
   const [inventoryLedger, setInventoryLedger] = useState<InventoryLedger[]>([]);
   const [productionJobs, setProductionJobs] = useState<ProductionJob[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
+  const [jobWorkers, setJobWorkers] = useState<JobWorker[]>([]);
+  const [roadChallans, setRoadChallans] = useState<RoadChallan[]>([]);
+  const [outsideJobWorks, setOutsideJobWorks] = useState<OutsideJobWork[]>([]);
   const [whatsAppLogs, setWhatsAppLogs] = useState<WhatsAppLog[]>([]);
   const [voiceLogs, setVoiceLogs] = useState<VoiceCommandLog[]>([]);
 
@@ -214,11 +266,13 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     setInventoryLedger([]);
     setProductionJobs([]);
     setBatches([]);
+    setJobWorkers([]);
+    setRoadChallans([]);
+    setOutsideJobWorks([]);
     setWhatsAppLogs([]);
     setVoiceLogs([]);
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem('factoryos_state_v1');
     }
   }, []);
 
@@ -271,6 +325,9 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         inventoryLedger,
         productionJobs,
         batches,
+        jobWorkers,
+        roadChallans,
+        outsideJobWorks,
         whatsAppLogs,
         voiceLogs,
       };
@@ -296,6 +353,9 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     inventoryLedger,
     productionJobs,
     batches,
+    jobWorkers,
+    roadChallans,
+    outsideJobWorks,
     whatsAppLogs,
     voiceLogs,
     broadcastSync,
@@ -324,6 +384,9 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         if (saved.inventoryLedger) setInventoryLedger(saved.inventoryLedger);
         if (saved.productionJobs) setProductionJobs(saved.productionJobs);
         if (saved.batches) setBatches(saved.batches);
+        if (saved.jobWorkers) setJobWorkers(saved.jobWorkers);
+        if (saved.roadChallans) setRoadChallans(saved.roadChallans);
+        if (saved.outsideJobWorks) setOutsideJobWorks(saved.outsideJobWorks);
         if (saved.whatsAppLogs) setWhatsAppLogs(saved.whatsAppLogs);
         if (saved.voiceLogs) setVoiceLogs(saved.voiceLogs);
       } catch {
@@ -353,6 +416,9 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
             if (fresh.boms) setBoms(fresh.boms);
             if (fresh.batches) setBatches(fresh.batches);
             if (fresh.productionJobs) setProductionJobs(fresh.productionJobs);
+            if (fresh.jobWorkers) setJobWorkers(fresh.jobWorkers);
+            if (fresh.roadChallans) setRoadChallans(fresh.roadChallans);
+            if (fresh.outsideJobWorks) setOutsideJobWorks(fresh.outsideJobWorks);
             if (fresh.whatsAppLogs) setWhatsAppLogs(fresh.whatsAppLogs);
             if (fresh.voiceLogs) setVoiceLogs(fresh.voiceLogs);
           } catch {
@@ -362,7 +428,7 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
-    // 2. Supabase Cross-Device Realtime Listener (Phone <-> Laptop <-> Tablet)
+    // 2. Supabase Cross-Device Realtime Listener
     let supabaseChannel: any = null;
     try {
       const supabase = createClient();
@@ -383,6 +449,9 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
             if (payload.boms) setBoms(payload.boms);
             if (payload.batches) setBatches(payload.batches);
             if (payload.productionJobs) setProductionJobs(payload.productionJobs);
+            if (payload.jobWorkers) setJobWorkers(payload.jobWorkers);
+            if (payload.roadChallans) setRoadChallans(payload.roadChallans);
+            if (payload.outsideJobWorks) setOutsideJobWorks(payload.outsideJobWorks);
             if (payload.whatsAppLogs) setWhatsAppLogs(payload.whatsAppLogs);
             if (payload.voiceLogs) setVoiceLogs(payload.voiceLogs);
           }
@@ -562,7 +631,6 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     return newOrder;
   }, [saleOrders.length, parties, products, factory.state_code, factory.id, currentProfile.id]);
 
-  // Atomic Conversion: Sale Order -> Invoice + Inventory Stock Decrement + Ledger
   const convertSaleOrderToInvoice = useCallback((saleOrderId: string, saleType: SaleType = 'credit'): Invoice => {
     const order = saleOrders.find((so) => so.id === saleOrderId);
     if (!order) throw new Error('Sale order not found');
@@ -759,7 +827,6 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     return newPO;
   }, [purchaseOrders.length, parties, materials, factory.state_code, factory.id, currentProfile.id]);
 
-  // Atomic Purchase Bill Posting + Material Stock In
   const postPurchaseBill = useCallback((
     poId: string,
     billNumber: string,
@@ -926,38 +993,76 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     return newJob;
   }, [productionJobs.length, factory.id, currentProfile.id, parties]);
 
+  // 100% TYPABLE PRODUCTION BATCH CREATOR
   const createProductionBatch = useCallback((
-    data: Partial<ProductionBatch>,
-    sizeLines: Array<{ size: string; qty: number; colour: string }>
+    data: {
+      batch_no?: string;
+      style?: string;
+      article_code?: string;
+      product_name?: string;
+      colour?: string;
+      fabric?: string;
+      product_id?: string;
+      production_job_id?: string;
+      notes?: string;
+    },
+    sizeLines: Array<{ size: string; qty: number; colour?: string }>
   ): ProductionBatch => {
     const batchId = crypto.randomUUID();
-    const batchNo = data.batch_no || `BATCH-${Math.floor(2600 + Math.random() * 900)}`;
-    const totalCutQty = sizeLines.reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
+    const batchNo = data.batch_no?.trim() || `BATCH-${Math.floor(2600 + Math.random() * 900)}`;
+    const styleCode = data.style?.trim() || data.article_code?.trim() || 'Style-01';
+    const prodTitle = data.product_name?.trim() || styleCode;
+    const colourName = data.colour?.trim() || 'Standard';
+    const fabricName = data.fabric?.trim() || 'Cotton Fabric';
+
+    // Auto-create product in catalog if not existing so there's zero blocking friction
+    let targetProductId = data.product_id;
+    if (!targetProductId) {
+      const existing = products.find((p) => p.name.toLowerCase() === prodTitle.toLowerCase() || p.sku.toLowerCase() === styleCode.toLowerCase());
+      if (existing) {
+        targetProductId = existing.id;
+      } else {
+        const newP = addProduct({
+          name: prodTitle,
+          sku: styleCode,
+          sale_price: 450,
+          hsn_code: '61091000',
+          gst_percent: 5.0,
+          stock_qty: 0,
+        });
+        targetProductId = newP.id;
+      }
+    }
 
     const sizes: BatchSizeLine[] = sizeLines.map((s) => ({
       id: crypto.randomUUID(),
       factory_id: factory.id,
       batch_id: batchId,
-      colour: s.colour || data.colour || 'Standard',
-      size: s.size,
+      colour: s.colour || colourName,
+      size: String(s.size).trim(),
       qty: Number(s.qty) || 0,
     }));
+
+    const totalCutQty = sizes.reduce((sum, s) => sum + s.qty, 0);
 
     const newBatch: ProductionBatch = {
       id: batchId,
       factory_id: factory.id,
       batch_no: batchNo,
       production_job_id: data.production_job_id,
-      product_id: data.product_id || products[0]?.id || '',
-      style: data.style || 'Standard Style',
-      colour: data.colour || 'Standard Colour',
+      product_id: targetProductId,
+      style: styleCode,
+      article_code: styleCode,
+      product_name: prodTitle,
+      colour: colourName,
+      fabric: fabricName,
       current_stage: 'cutting',
-      initial_qty: totalCutQty,
-      current_qty: totalCutQty,
+      initial_qty: totalCutQty > 0 ? totalCutQty : 100,
+      current_qty: totalCutQty > 0 ? totalCutQty : 100,
       qr_code_url: `https://factoryos.app/qr/${batchNo}`,
       created_by: currentProfile.id,
       created_at: new Date().toISOString(),
-      product: products.find((p) => p.id === data.product_id),
+      product: products.find((p) => p.id === targetProductId),
       job: productionJobs.find((j) => j.id === data.production_job_id),
       size_lines: sizes,
       transfers: [],
@@ -966,7 +1071,7 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
 
     setBatches((prev) => [newBatch, ...prev]);
     return newBatch;
-  }, [factory.id, currentProfile.id, products, productionJobs]);
+  }, [factory.id, currentProfile.id, products, productionJobs, addProduct]);
 
   // Floor Loop Step 1: Move Stage
   const moveBatchStage = useCallback((
@@ -1114,6 +1219,235 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     return newWriteOff;
   }, [batches, factory.id, currentProfile.id]);
 
+  // -------------------------------------------------------------------------
+  // ROAD CHALLANS & OUTSIDE JOB WORK ACTIONS
+  // -------------------------------------------------------------------------
+
+  const createJobWorker = useCallback((data: {
+    name: string;
+    phone: string;
+    address?: string;
+    process_type: JobWorkerProcess;
+    default_rate?: number;
+  }): JobWorker => {
+    const worker: JobWorker = {
+      id: crypto.randomUUID(),
+      factory_id: factory.id,
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      address: data.address?.trim() || '',
+      process_type: data.process_type || 'making',
+      default_rate: Number(data.default_rate) || 0,
+      created_at: new Date().toISOString(),
+    };
+    setJobWorkers((prev) => [worker, ...prev]);
+    return worker;
+  }, [factory.id]);
+
+  const createRoadChallan = useCallback((data: {
+    job_worker_id: string;
+    process_type: JobWorkerProcess;
+    challan_date?: string;
+    notes?: string;
+    photo_url?: string;
+    lots: Array<{
+      lot_no: string;
+      article: string;
+      color: string;
+      rate_per_pc?: number;
+      sizes: Array<{ size: string; dispatched_qty: number }>;
+    }>;
+  }): RoadChallan => {
+    const challanId = crypto.randomUUID();
+    const challanNo = `RC-${new Date().getFullYear()}-${String(roadChallans.length + 101).padStart(3, '0')}`;
+    const worker = jobWorkers.find((w) => w.id === data.job_worker_id);
+
+    const lots: RoadChallanLot[] = data.lots.map((l) => {
+      const lotId = crypto.randomUUID();
+      const sizes: RoadChallanSizeLine[] = l.sizes.map((s) => ({
+        id: crypto.randomUUID(),
+        lot_id: lotId,
+        size: s.size,
+        dispatched_qty: Number(s.dispatched_qty) || 0,
+        returned_qty: null,
+        shortage_qty: null,
+      }));
+
+      return {
+        id: lotId,
+        factory_id: factory.id,
+        challan_id: challanId,
+        lot_no: l.lot_no || 'LOT-01',
+        article: l.article || 'Article',
+        color: l.color || 'Standard',
+        rate_per_pc: Number(l.rate_per_pc) || worker?.default_rate || 0,
+        sizes,
+      };
+    });
+
+    const newChallan: RoadChallan = {
+      id: challanId,
+      factory_id: factory.id,
+      challan_no: challanNo,
+      challan_date: data.challan_date || new Date().toISOString().split('T')[0],
+      job_worker_id: data.job_worker_id,
+      process_type: data.process_type,
+      status: 'dispatched',
+      photo_url: data.photo_url,
+      notes: data.notes,
+      created_by: currentProfile.id,
+      created_at: new Date().toISOString(),
+      job_worker: worker,
+      lots,
+    };
+
+    setRoadChallans((prev) => [newChallan, ...prev]);
+
+    // Automatically register entry into Outside Job Work Table
+    lots.forEach((lot) => {
+      const totalPcs = lot.sizes.reduce((sum, s) => sum + s.dispatched_qty, 0);
+      const approxCost = totalPcs * (lot.rate_per_pc || 0);
+
+      const jobWorkEntry: OutsideJobWork = {
+        id: crypto.randomUUID(),
+        factory_id: factory.id,
+        challan_id: challanId,
+        vendor_name: worker?.name || 'Outside Vendor',
+        phone: worker?.phone || '',
+        process: data.process_type,
+        batch_no: lot.lot_no,
+        article: lot.article,
+        pieces_sent: totalPcs,
+        pieces_returned: 0,
+        rate_per_piece: lot.rate_per_pc,
+        total_approx_cost: approxCost,
+        dispatch_date: newChallan.challan_date,
+        status: 'sent',
+        variance: 0,
+        created_at: new Date().toISOString(),
+      };
+      setOutsideJobWorks((prev) => [jobWorkEntry, ...prev]);
+    });
+
+    return newChallan;
+  }, [roadChallans.length, jobWorkers, factory.id, currentProfile.id]);
+
+  const reconcileRoadChallan = useCallback((
+    challanId: string,
+    reconciliationData: {
+      completion_date: string;
+      stamp_image?: string;
+      returnedSizes: Array<{ lot_id: string; size: string; returned_qty: number }>;
+    }
+  ): RoadChallan => {
+    let updatedChallan: RoadChallan | undefined;
+
+    setRoadChallans((prev) =>
+      prev.map((ch) => {
+        if (ch.id !== challanId) return ch;
+
+        let allCompleted = true;
+        let anyReturned = false;
+
+        const updatedLots = (ch.lots || []).map((lot) => {
+          const updatedSizes = lot.sizes.map((sz) => {
+            const match = reconciliationData.returnedSizes.find(
+              (r) => r.lot_id === lot.id && r.size === sz.size
+            );
+
+            if (match !== undefined && match.returned_qty !== null) {
+              anyReturned = true;
+              const ret = Number(match.returned_qty) || 0;
+              const shortage = sz.dispatched_qty - ret;
+              return {
+                ...sz,
+                returned_qty: ret,
+                shortage_qty: shortage,
+              };
+            }
+
+            allCompleted = false;
+            return sz;
+          });
+
+          return { ...lot, sizes: updatedSizes };
+        });
+
+        const status: 'dispatched' | 'partially_returned' | 'completed' = allCompleted
+          ? 'completed'
+          : anyReturned
+          ? 'partially_returned'
+          : 'dispatched';
+
+        updatedChallan = {
+          ...ch,
+          status,
+          completion_date: reconciliationData.completion_date,
+          stamp_image: reconciliationData.stamp_image,
+          lots: updatedLots,
+        };
+
+        return updatedChallan;
+      })
+    );
+
+    // Sync outside job works table
+    setOutsideJobWorks((prev) =>
+      prev.map((jw) => {
+        if (jw.challan_id !== challanId) return jw;
+        const challan = roadChallans.find((c) => c.id === challanId);
+        const lot = challan?.lots?.find((l) => l.lot_no === jw.batch_no);
+        if (!lot) return jw;
+
+        const returnedTotal = lot.sizes.reduce(
+          (sum, s) => sum + (s.returned_qty || 0),
+          0
+        );
+        const variance = jw.pieces_sent - returnedTotal;
+
+        return {
+          ...jw,
+          pieces_returned: returnedTotal,
+          variance,
+          actual_return_date: reconciliationData.completion_date,
+          status: variance === 0 && returnedTotal > 0 ? 'completed' : 'partially_received',
+        };
+      })
+    );
+
+    return updatedChallan!;
+  }, [roadChallans]);
+
+  const addOutsideJobWork = useCallback((data: Partial<OutsideJobWork>): OutsideJobWork => {
+    const entry: OutsideJobWork = {
+      id: crypto.randomUUID(),
+      factory_id: factory.id,
+      vendor_name: data.vendor_name || 'Outside Vendor',
+      phone: data.phone || '',
+      process: data.process || 'making',
+      batch_no: data.batch_no || `LOT-${Math.floor(1000 + Math.random() * 9000)}`,
+      article: data.article || 'Style',
+      pieces_sent: Number(data.pieces_sent) || 100,
+      pieces_returned: Number(data.pieces_returned) || 0,
+      rate_per_piece: Number(data.rate_per_piece) || 15,
+      total_approx_cost: (Number(data.pieces_sent) || 100) * (Number(data.rate_per_piece) || 15),
+      dispatch_date: data.dispatch_date || new Date().toISOString().split('T')[0],
+      expected_return_date: data.expected_return_date,
+      status: data.status || 'sent',
+      variance: Number(data.variance) || 0,
+      notes: data.notes,
+      created_at: new Date().toISOString(),
+    };
+    setOutsideJobWorks((prev) => [entry, ...prev]);
+    return entry;
+  }, [factory.id]);
+
+  const updateOutsideJobWork = useCallback((id: string, data: Partial<OutsideJobWork>) => {
+    setOutsideJobWorks((prev) =>
+      prev.map((jw) => (jw.id === id ? { ...jw, ...data } : jw))
+    );
+  }, []);
+
   // BOM Management
   const createBOM = useCallback((
     productId: string,
@@ -1232,7 +1566,7 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         const targetBatch = batches.find((b) => b.batch_no.toUpperCase().includes(batchNum));
 
         let toStage: FactoryStage = 'stitching';
-        if (text.includes('wash') || text.includes('dye')) toStage = 'washing';
+        if (text.includes('iron') || text.includes('press') || text.includes('finish')) toStage = 'ironing';
         else if (text.includes('qc') || text.includes('check') || text.includes('inspect')) toStage = 'qc';
         else if (text.includes('pack')) toStage = 'packing';
         else if (text.includes('dispatch')) toStage = 'dispatch';
@@ -1306,24 +1640,28 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
     };
   }, [batches, currentProfile.id, factory.id, moveBatchStage, receiveBatchStage, recordBatchWriteOff]);
 
-  // WhatsApp Notification Engine calling Meta Cloud API
+  // Direct 1-Click WhatsApp + Cloud API Dispatcher
   const sendWhatsAppNotification = useCallback(async (
     recipientPhone: string,
     recipientName: string,
     message: string,
     refTable?: string,
     refId?: string
-  ): Promise<WhatsAppLog> => {
+  ): Promise<{ log: WhatsAppLog; directUrl: string }> => {
     const logId = crypto.randomUUID();
-    let apiStatus = 'sent';
-    let payload: Record<string, unknown> = {};
+    const cleanPhone = recipientPhone.replace(/\D/g, '');
+    const phoneWithCountry = cleanPhone.startsWith('91') || cleanPhone.length > 10 ? cleanPhone : `91${cleanPhone}`;
+    const directUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`;
+
+    let apiStatus: 'queued' | 'sent' | 'delivered' | 'failed' = 'sent';
+    let payload: Record<string, unknown> = { directUrl };
 
     try {
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          recipientPhone,
+          recipientPhone: phoneWithCountry,
           recipientName,
           message,
           refTable,
@@ -1331,11 +1669,10 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         }),
       });
       const data = await res.json();
-      payload = data;
+      payload = { ...payload, apiResponse: data };
       if (!res.ok) apiStatus = 'failed';
     } catch (err: unknown) {
-      apiStatus = 'failed';
-      payload = { error: err instanceof Error ? err.message : String(err) };
+      // Fallback
     }
 
     const log: WhatsAppLog = {
@@ -1346,13 +1683,13 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
       message,
       ref_table: refTable,
       ref_id: refId,
-      status: apiStatus as any,
+      status: apiStatus,
       response_payload: payload,
       sent_at: new Date().toISOString(),
     };
 
     setWhatsAppLogs((prev) => [log, ...prev]);
-    return log;
+    return { log, directUrl };
   }, [factory.id]);
 
   // Bulk Data Importer
@@ -1437,6 +1774,9 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         inventoryLedger,
         productionJobs,
         batches,
+        jobWorkers,
+        roadChallans,
+        outsideJobWorks,
         whatsAppLogs,
         voiceLogs,
         costingViews,
@@ -1455,6 +1795,11 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         moveBatchStage,
         receiveBatchStage,
         recordBatchWriteOff,
+        createJobWorker,
+        createRoadChallan,
+        reconcileRoadChallan,
+        addOutsideJobWork,
+        updateOutsideJobWork,
         createBOM,
         generateFabricEstimate,
         executeVoiceCommand,

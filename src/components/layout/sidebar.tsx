@@ -89,6 +89,18 @@ export function Sidebar() {
           roles: ['owner', 'master', 'supervisor'],
         },
         {
+          label: 'Road Challans (Job Work)',
+          href: '/make/challans',
+          icon: Truck,
+          roles: ['owner', 'master', 'helper', 'supervisor', 'inventory_manager'],
+        },
+        {
+          label: 'Making & Printing Vendors',
+          href: '/make/vendors',
+          icon: Users,
+          roles: ['owner', 'master', 'supervisor', 'inventory_manager'],
+        },
+        {
           label: 'Floor Kanban Board',
           href: '/make/kanban',
           icon: Boxes,

@@ -66,14 +66,16 @@ export default function InvoicesPage() {
     setPaymentRef('');
   };
 
-  const handleSendWhatsApp = (inv: Invoice) => {
+  const handleSendWhatsApp = async (inv: Invoice) => {
     const party = parties.find((p) => p.id === inv.party_id) || inv.party;
     if (!party) return;
     const msg = `Namaste ${party.name}, Tax Invoice #${inv.number} for ${formatINR(
       inv.total
-    )} has been raised by ${factory.name}. View/Download PDF: ${inv.pdf_url || 'Sent via WhatsApp'}`;
-    sendWhatsAppNotification(party.phone, party.name, msg, 'invoices', inv.id);
-    alert(`Invoice WhatsApp sent to ${party.name} (${party.phone})!`);
+    )} has been raised by ${factory.name}. View/Download PDF: ${inv.pdf_url || 'Sent via FactoryOS'}`;
+    const res = await sendWhatsAppNotification(party.phone, party.name, msg, 'invoices', inv.id);
+    if (res.directUrl) {
+      window.open(res.directUrl, '_blank');
+    }
   };
 
   const canRecordPayment = ['owner', 'master', 'accountant'].includes(currentProfile.role);

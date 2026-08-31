@@ -90,14 +90,16 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const handleSendWhatsApp = (po: PurchaseOrder) => {
+  const handleSendWhatsApp = async (po: PurchaseOrder) => {
     const vendor = parties.find((p) => p.id === po.party_id);
     if (!vendor) return;
     const msg = `Namaste ${vendor.name}, Purchase Order #${po.number} for ${formatINR(
       po.total_amount
     )} has been raised by ${factory.name}. Please confirm dispatch timeline.`;
-    sendWhatsAppNotification(vendor.phone, vendor.name, msg, 'purchase_orders', po.id);
-    alert(`Purchase Order WhatsApp sent to ${vendor.name} (${vendor.phone})!`);
+    const res = await sendWhatsAppNotification(vendor.phone, vendor.name, msg, 'purchase_orders', po.id);
+    if (res.directUrl) {
+      window.open(res.directUrl, '_blank');
+    }
   };
 
   const canEdit = ['owner', 'master', 'purchase'].includes(currentProfile.role);

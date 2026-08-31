@@ -2,136 +2,147 @@
 
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
-import { STAGE_CONFIG, STAGE_ORDER, getNextStage } from '@/lib/reconciliation';
-import { generateJobCardPDF } from '@/lib/pdf-generator';
+import { formatINR } from '@/lib/gst';
 import {
-  Factory,
-  Plus,
-  QrCode,
-  ArrowRight,
-  ShieldCheck,
-  AlertTriangle,
-  FileDown,
-  Scissors,
-  CheckCircle2,
-  Trash2,
-  X,
   Layers,
+  Plus,
+  Search,
+  Printer,
+  ArrowRight,
+  Trash2,
+  CheckCircle2,
+  AlertTriangle,
+  QrCode,
+  Sparkles,
+  X,
+  Truck,
+  Scissors,
+  FileSpreadsheet,
 } from 'lucide-react';
-import { ProductionBatch, FactoryStage } from '@/types/database.types';
+import { generateJobCardPDF } from '@/lib/pdf-generator';
+import { FactoryStage } from '@/types/database.types';
+import { STAGE_CONFIG, STAGE_ORDER } from '@/lib/reconciliation';
+import Link from 'next/link';
 
 export default function BatchesPage() {
   const {
-    factory,
     batches,
-    products,
-    productionJobs,
-    parties,
     createProductionBatch,
     moveBatchStage,
     recordBatchWriteOff,
+    factory,
     currentProfile,
   } = useFactory();
 
-  const [selectedBatch, setSelectedBatch] = useState<ProductionBatch | null>(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
-  const [isScrapModalOpen, setIsScrapModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [stageFilter, setStageFilter] = useState<string>('all');
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isMoveOpen, setIsMoveOpen] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
-  // New Batch Form State
+  // 100% Typable Batch Form State
   const [batchNo, setBatchNo] = useState('');
-  const [jobId, setJobId] = useState('');
-  const [productId, setProductId] = useState(products[0]?.id || '');
-  const [style, setStyle] = useState('Classic Crew Neck');
-  const [colour, setColour] = useState('Navy');
-  const [sizeMatrix, setSizeMatrix] = useState<Array<{ size: string; qty: number; colour: string }>>([
-    { size: 'S', qty: 50, colour: 'Navy' },
-    { size: 'M', qty: 100, colour: 'Navy' },
-    { size: 'L', qty: 75, colour: 'Navy' },
-    { size: 'XL', qty: 25, colour: 'Navy' },
+  const [styleCode, setStyleCode] = useState('');
+  const [productName, setProductName] = useState('');
+  const [colour, setColour] = useState('');
+  const [fabric, setFabric] = useState('');
+  const [sizeLines, setSizeLines] = useState<Array<{ size: string; qty: number; colour?: string }>>([
+    { size: '22', qty: 25 },
+    { size: '24', qty: 50 },
+    { size: '26', qty: 50 },
+    { size: '28', qty: 25 },
   ]);
+  const [newSizeInput, setNewSizeInput] = useState('');
 
   // Move Stage State
-  const [moveBatch, setMoveBatch] = useState<ProductionBatch | null>(null);
   const [targetStage, setTargetStage] = useState<FactoryStage>('stitching');
-  const [moveQty, setMoveQty] = useState('');
-  const [isOutsideVendor, setIsOutsideVendor] = useState(false);
-  const [vendorId, setVendorId] = useState('');
+  const [sentQty, setSentQty] = useState('');
   const [moveNotes, setMoveNotes] = useState('');
 
-  // Scrap State
-  const [scrapBatch, setScrapBatch] = useState<ProductionBatch | null>(null);
-  const [scrapQty, setScrapQty] = useState('');
-  const [scrapReason, setScrapReason] = useState('');
+  const selectedBatch = batches.find((b) => b.id === selectedBatchId);
 
-  const handleCreateBatch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!productId || sizeMatrix.length === 0) return;
+  const filteredBatches = batches.filter((b) => {
+    const matchesSearch =
+      b.batch_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      b.style?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      b.colour?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      b.fabric?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    createProductionBatch(
-      {
-        batch_no: batchNo || undefined,
-        production_job_id: jobId || undefined,
-        product_id: productId,
-        style,
-        colour,
-      },
-      sizeMatrix
-    );
+    const matchesStage = stageFilter === 'all' || b.current_stage === stageFilter;
+    return matchesSearch && matchesStage;
+  });
 
-    setIsCreateModalOpen(false);
-    setBatchNo('');
+  const handleAddCustomSize = () => {
+    if (!newSizeInput.trim()) return;
+    setSizeLines([...sizeLines, { size: newSizeInput.trim(), qty: 25 }]);
+    setNewSizeInput('');
   };
 
-  const handleInitiateMove = (e: React.FormEvent) => {
+  const handleUpdateSizeQty = (index: number, qty: number) => {
+    const updated = [...sizeLines];
+    updated[index].qty = qty;
+    setSizeLines(updated);
+  };
+
+  const handleRemoveSize = (index: number) => {
+    setSizeLines(sizeLines.filter((_, i) => i !== index));
+  };
+
+  const handleOpenCreateModal = () => {
+    const autoNo = `BATCH-${Math.floor(2600 + Math.random() * 900)}`;
+    setBatchNo(autoNo);
+    setStyleCode('Style-01');
+    setProductName('Garment Style');
+    setColour('Navy Blue');
+    setFabric('100% Bio-Wash Cotton');
+    setSizeLines([
+      { size: '22', qty: 25 },
+      { size: '24', qty: 50 },
+      { size: '26', qty: 50 },
+      { size: '28', qty: 25 },
+    ]);
+    setIsCreateOpen(true);
+  };
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!moveBatch || !moveQty) return;
+    createProductionBatch(
+      {
+        batch_no: batchNo,
+        style: styleCode,
+        article_code: styleCode,
+        product_name: productName,
+        colour,
+        fabric,
+      },
+      sizeLines
+    );
+
+    setIsCreateOpen(false);
+  };
+
+  const handleMoveSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBatchId || !sentQty) return;
 
     try {
       moveBatchStage(
-        moveBatch.id,
+        selectedBatchId,
         targetStage,
-        Number(moveQty),
-        isOutsideVendor,
-        vendorId || undefined,
+        Number(sentQty),
+        false,
+        undefined,
         moveNotes
       );
-      setIsMoveModalOpen(false);
-      setMoveBatch(null);
-      setMoveQty('');
+      setIsMoveOpen(false);
+      setSelectedBatchId(null);
+      setSentQty('');
       setMoveNotes('');
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      alert('Trolley stage transfer initiated! Head to Floor Transfers to confirm receipt.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to move batch stage');
     }
   };
-
-  const handleRecordScrap = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!scrapBatch || !scrapQty || !scrapReason) return;
-
-    try {
-      recordBatchWriteOff(
-        scrapBatch.id,
-        scrapBatch.current_stage,
-        Number(scrapQty),
-        scrapReason
-      );
-      setIsScrapModalOpen(false);
-      setScrapBatch(null);
-      setScrapQty('');
-      setScrapReason('');
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handlePrintJobCard = async (batch: ProductionBatch) => {
-    const job = productionJobs.find((j) => j.id === batch.production_job_id);
-    await generateJobCardPDF(batch, job, factory);
-  };
-
-  const canManage = ['owner', 'master', 'supervisor'].includes(currentProfile.role);
-  const canOperate = ['owner', 'master', 'helper', 'supervisor', 'operator'].includes(currentProfile.role);
 
   return (
     <div className="space-y-6">
@@ -139,249 +150,327 @@ export default function BatchesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Factory className="h-6 w-6 text-blue-400" />
-            Floor Production Batches (Trolleys)
+            <Layers className="h-6 w-6 text-blue-400" />
+            Production Batches & Floor Trolleys
           </h1>
           <p className="text-xs sm:text-sm text-slate-400">
-            Physical trolley tracking with size breakdowns, QR traveler cards, and Move &rarr; Receive stage transitions
+            Create typable garment lots, track piece counts across sizes, generate QR job cards, and route transfers
           </p>
         </div>
 
-        {canManage && (
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Link
+            href="/make/challans"
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
+          >
+            <Truck className="h-4 w-4 text-blue-400" />
+            <span>Road Challans</span>
+          </Link>
+
           <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition self-start sm:self-auto"
+            onClick={handleOpenCreateModal}
+            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
           >
             <Plus className="h-4 w-4" />
-            <span>Create New Batch / Trolley</span>
+            <span>New Production Batch</span>
           </button>
-        )}
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search by batch #, style, colour, fabric..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs overflow-x-auto">
+          <button
+            onClick={() => setStageFilter('all')}
+            className={`px-3 py-1.5 rounded-lg capitalize font-semibold whitespace-nowrap transition ${
+              stageFilter === 'all'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            All Stages
+          </button>
+          {STAGE_ORDER.map((st) => (
+            <button
+              key={st}
+              onClick={() => setStageFilter(st)}
+              className={`px-3 py-1.5 rounded-lg capitalize font-semibold whitespace-nowrap transition ${
+                stageFilter === st
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {STAGE_CONFIG[st].label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Batches Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {batches.map((batch) => {
-          const stageCfg = STAGE_CONFIG[batch.current_stage];
-          const prod = products.find((p) => p.id === batch.product_id);
-          const job = productionJobs.find((j) => j.id === batch.production_job_id);
-          const nextStg = getNextStage(batch.current_stage);
-          const totalScrap = (batch.write_offs || []).reduce((sum, w) => sum + w.qty, 0);
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredBatches.length === 0 ? (
+          <div className="col-span-full py-16 text-center text-slate-500 text-xs rounded-2xl border border-slate-800 bg-slate-900/60">
+            <Layers className="h-10 w-10 mx-auto mb-2 text-slate-600" />
+            No production batches found. Click &ldquo;New Production Batch&rdquo; to create one with custom typable styles and sizes.
+          </div>
+        ) : (
+          filteredBatches.map((batch) => {
+            const stageCfg = STAGE_CONFIG[batch.current_stage] || STAGE_CONFIG.cutting;
+            const inTransitQty = (batch.transfers || [])
+              .filter((t) => t.status === 'awaiting_receive')
+              .reduce((sum, t) => sum + t.sent_qty, 0);
 
-          return (
-            <div
-              key={batch.id}
-              className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur space-y-4 hover:border-slate-700 transition"
-            >
-              {/* Batch Card Header */}
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-bold text-white bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">
-                      {batch.batch_no}
-                    </span>
+            return (
+              <div
+                key={batch.id}
+                className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur space-y-4 shadow flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-mono text-xs font-bold text-blue-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                        {batch.batch_no}
+                      </span>
+                      <h3 className="text-sm font-bold text-white mt-1.5">
+                        {batch.style || batch.article_code || 'Garment Style'}
+                      </h3>
+                      <p className="text-xs text-slate-400">{batch.product_name || 'Standard'}</p>
+                    </div>
+
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${stageCfg.bgLight} ${stageCfg.color}`}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${stageCfg.bgLight} ${stageCfg.color}`}
                     >
                       {stageCfg.label}
                     </span>
                   </div>
-                  <h3 className="text-xs font-bold text-slate-200 mt-1.5">
-                    {batch.style} &bull; <span className="text-slate-400 font-normal">{batch.colour}</span>
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Job Ref: <span className="text-slate-400 font-medium">{job?.number || 'Direct Stock Batch'}</span>
-                  </p>
-                </div>
 
-                {/* Quantity Pill */}
-                <div className="text-right">
-                  <span className="text-xl font-black text-white">{batch.current_qty}</span>
-                  <span className="text-xs text-slate-400 ml-1">Pcs on-hand</span>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    Original: {batch.initial_qty} | Scrap: <span className="text-rose-400 font-bold">{totalScrap}</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Size Line Breakdown */}
-              <div className="p-3 rounded-xl bg-slate-850 border border-slate-800/80">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Size Breakdown (Trolley Matrix):
-                </p>
-                <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                  {(batch.size_lines || []).map((s) => (
-                    <div key={s.id} className="p-1.5 rounded-lg bg-slate-800 border border-slate-700/60">
-                      <span className="text-slate-400 font-semibold text-[10px] block">{s.size}</span>
-                      <span className="font-bold text-white text-xs">{s.qty} pcs</span>
+                  <div className="grid grid-cols-2 gap-2 text-xs p-2.5 rounded-xl bg-slate-850 border border-slate-800">
+                    <div>
+                      <span className="text-slate-400 text-[11px]">Colour:</span>
+                      <p className="font-semibold text-slate-200">{batch.colour}</p>
                     </div>
-                  ))}
+                    <div>
+                      <span className="text-slate-400 text-[11px]">Fabric:</span>
+                      <p className="font-semibold text-slate-200 truncate">{batch.fabric || 'Cotton'}</p>
+                    </div>
+                  </div>
+
+                  {/* Size Matrix */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-400">Size Breakdown:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(batch.size_lines || []).map((s) => (
+                        <span
+                          key={s.size}
+                          className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-300 border border-slate-700"
+                        >
+                          {s.size}: <strong className="text-white">{s.qty}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Quantities */}
+                  <div className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-800/60 border border-slate-750">
+                    <div>
+                      <span className="text-slate-400 text-[11px]">On Floor:</span>
+                      <p className="font-extrabold text-white text-base">{batch.current_qty} Pcs</p>
+                    </div>
+                    {inTransitQty > 0 && (
+                      <div className="text-right">
+                        <span className="text-amber-400 font-semibold text-[11px]">In Transit:</span>
+                        <p className="font-bold text-amber-400">{inTransitQty} Pcs</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => generateJobCardPDF(batch, undefined, factory)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                  >
+                    <Printer className="h-3.5 w-3.5 text-blue-400" />
+                    <span>Print Job Card</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSelectedBatchId(batch.id);
+                      setSentQty(String(batch.current_qty));
+                      setIsMoveOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
+                  >
+                    <span>Move Stage</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
-                <button
-                  onClick={() => handlePrintJobCard(batch)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
-                  title="Generate & Print Physical QR Trolley Traveler"
-                >
-                  <FileDown className="h-3.5 w-3.5 text-blue-400" />
-                  <span>Job Card PDF</span>
-                </button>
-
-                <div className="flex items-center gap-2">
-                  {canOperate && (
-                    <button
-                      onClick={() => {
-                        setScrapBatch(batch);
-                        setScrapQty('1');
-                        setIsScrapModalOpen(true);
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-xs font-semibold transition"
-                    >
-                      Log Scrap
-                    </button>
-                  )}
-
-                  {canOperate && nextStg && batch.current_qty > 0 && (
-                    <button
-                      onClick={() => {
-                        setMoveBatch(batch);
-                        setTargetStage(nextStg);
-                        setMoveQty(String(batch.current_qty));
-                        setIsMoveModalOpen(true);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition"
-                    >
-                      <span>Move to {STAGE_CONFIG[nextStg].label}</span>
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
-      {/* Create Batch Modal */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/50">
+      {/* ------------------------------------------------------------------ */}
+      {/* MODAL 1: CREATE 100% TYPABLE BATCH */}
+      {/* ------------------------------------------------------------------ */}
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/60">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Factory className="h-4 w-4 text-blue-400" />
-                Create New Production Batch (Trolley)
+                <Scissors className="h-4 w-4 text-blue-400" />
+                New Production Batch (100% Typable Form)
               </h3>
               <button
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={() => setIsCreateOpen(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateBatch} className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+            <form onSubmit={handleCreateSubmit} className="p-6 space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Product / Garment *</label>
-                  <select
-                    value={productId}
-                    onChange={(e) => setProductId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.sku})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Link Make IQ Job (Optional)</label>
-                  <select
-                    value={jobId}
-                    onChange={(e) => setJobId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Direct Stock Batch (No Job)</option>
-                    {productionJobs.map((j) => (
-                      <option key={j.id} value={j.id}>
-                        {j.number} ({j.target_qty} pcs target)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Batch / Trolley Number</label>
+                  <label className="font-semibold text-slate-300">Batch / Lot # *</label>
                   <input
                     type="text"
-                    placeholder="Auto (e.g. BATCH-2603)"
+                    required
                     value={batchNo}
                     onChange={(e) => setBatchNo(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Colour Shade</label>
+                  <label className="font-semibold text-slate-300">Style / Article Code *</label>
                   <input
                     type="text"
-                    value={colour}
-                    onChange={(e) => setColour(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                    placeholder="M-TEE-01"
+                    value={styleCode}
+                    onChange={(e) => setStyleCode(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white"
                   />
                 </div>
               </div>
 
-              {/* Size Matrix Breakdown */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">Garment / Product Name</label>
+                  <input
+                    type="text"
+                    placeholder="Crew Neck Cotton Tee"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">Colour</label>
+                  <input
+                    type="text"
+                    placeholder="Navy Blue"
+                    value={colour}
+                    onChange={(e) => setColour(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-300">Fabric Composition / Lot Info</label>
+                <input
+                  type="text"
+                  placeholder="100% Cotton Single Jersey 180 GSM"
+                  value={fabric}
+                  onChange={(e) => setFabric(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white"
+                />
+              </div>
+
+              {/* Dynamic Size × Quantity Matrix */}
               <div className="space-y-2 pt-2 border-t border-slate-800">
-                <label className="font-bold text-white block">Cut Quantity Size Matrix</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {sizeMatrix.map((s, idx) => (
-                    <div key={s.size} className="space-y-1">
-                      <span className="text-[10px] text-slate-400 block text-center font-bold">
-                        Size {s.size}
-                      </span>
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-300">
+                    Size-Wise Cut Breakdown:
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      placeholder="Add Size (e.g. 30, XXL)"
+                      value={newSizeInput}
+                      onChange={(e) => setNewSizeInput(e.target.value)}
+                      className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white text-[11px] w-32"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomSize}
+                      className="px-2 py-1 rounded-lg bg-blue-600 text-white font-bold text-[11px]"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {sizeLines.map((s, idx) => (
+                    <div key={s.size} className="p-2 rounded-xl bg-slate-850 border border-slate-800 flex items-center justify-between gap-1">
+                      <span className="font-mono font-bold text-blue-400 text-xs w-8">{s.size}:</span>
                       <input
                         type="number"
                         min={0}
                         value={s.qty}
-                        onChange={(e) => {
-                          const updated = [...sizeMatrix];
-                          updated[idx].qty = Number(e.target.value) || 0;
-                          setSizeMatrix(updated);
-                        }}
-                        className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-center font-bold"
+                        onChange={(e) => handleUpdateSizeQty(idx, Number(e.target.value))}
+                        className="w-16 px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white text-right font-bold"
                       />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSize(idx)}
+                        className="text-slate-500 hover:text-rose-400 p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
                   ))}
                 </div>
-                <p className="text-[11px] text-slate-400 text-right font-semibold">
-                  Total Batch Cut Qty:{' '}
-                  <strong className="text-white">
-                    {sizeMatrix.reduce((sum, s) => sum + s.qty, 0)} Pcs
+
+                <div className="text-right text-slate-400 text-xs pt-1">
+                  Total Cut Quantity:{' '}
+                  <strong className="text-white text-sm font-extrabold">
+                    {sizeLines.reduce((sum, s) => sum + s.qty, 0)} Pieces
                   </strong>
-                </p>
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-3">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
+                  onClick={() => setIsCreateOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md shadow-blue-600/30"
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/30"
                 >
-                  Create Batch & Generate QR
+                  Create Batch & Start Cutting
                 </button>
               </div>
             </form>
@@ -389,189 +478,83 @@ export default function BatchesPage() {
         </div>
       )}
 
-      {/* Move Stage Modal */}
-      {isMoveModalOpen && moveBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/50">
+      {/* ------------------------------------------------------------------ */}
+      {/* MODAL 2: MOVE STAGE */}
+      {/* ------------------------------------------------------------------ */}
+      {isMoveOpen && selectedBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/60">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Scissors className="h-4 w-4 text-blue-400" />
-                Initiate Floor Stage Transfer (Move)
+                <ArrowRight className="h-4 w-4 text-blue-400" />
+                Move Batch Trolley — {selectedBatch.batch_no}
               </h3>
               <button
-                onClick={() => setIsMoveModalOpen(false)}
+                onClick={() => setIsMoveOpen(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleInitiateMove} className="p-6 space-y-4 text-xs">
-              <div className="p-3 rounded-xl bg-slate-850 border border-slate-800">
-                <p className="text-[11px] text-slate-400">Transferring Batch:</p>
-                <p className="text-sm font-bold text-white font-mono">{moveBatch.batch_no}</p>
-                <p className="text-slate-300 text-xs mt-0.5">
-                  Current Stage: <strong className="text-amber-400 uppercase">{moveBatch.current_stage}</strong> &bull; Available: <strong className="text-emerald-400">{moveBatch.current_qty} pcs</strong>
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Target Stage *</label>
-                  <select
-                    value={targetStage}
-                    onChange={(e) => setTargetStage(e.target.value as FactoryStage)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {STAGE_ORDER.map((stg) => (
-                      <option key={stg} value={stg} disabled={stg === moveBatch.current_stage}>
-                        {STAGE_CONFIG[stg].label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Sent Quantity (Pcs) *</label>
-                  <input
-                    type="number"
-                    max={moveBatch.current_qty}
-                    min={1}
-                    required
-                    value={moveQty}
-                    onChange={(e) => setMoveQty(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-2 border-t border-slate-800">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isOutsideVendor}
-                    onChange={(e) => setIsOutsideVendor(e.target.checked)}
-                    className="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="font-semibold text-slate-300">Outside Jobwork / Vendor Processing</span>
-                </label>
-
-                {isOutsideVendor && (
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-300">Select Jobwork Vendor</label>
-                    <select
-                      value={vendorId}
-                      onChange={(e) => setVendorId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white"
-                    >
-                      <option value="">Select Vendor...</option>
-                      {parties
-                        .filter((p) => p.type === 'vendor' || p.type === 'both')
-                        .map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name} ({v.state})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
+            <form onSubmit={handleMoveSubmit} className="p-6 space-y-4 text-xs">
+              <div className="p-3 rounded-xl bg-slate-850 border border-slate-800 space-y-1">
+                <p className="text-slate-400">Current Stage: <strong className="text-blue-400 uppercase">{selectedBatch.current_stage}</strong></p>
+                <p className="text-slate-400">Available Pieces: <strong className="text-white font-bold">{selectedBatch.current_qty} Pcs</strong></p>
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Transfer Notes / Instructions</label>
-                <textarea
-                  rows={2}
-                  placeholder="e.g. Line 2 stitching handoff..."
-                  value={moveNotes}
-                  onChange={(e) => setMoveNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsMoveModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
+                <label className="font-semibold text-slate-300">Transfer Destination Stage *</label>
+                <select
+                  value={targetStage}
+                  onChange={(e) => setTargetStage(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md shadow-blue-600/30"
-                >
-                  Confirm Move & Await Receive
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Scrap Write-off Modal */}
-      {isScrapModalOpen && scrapBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/50">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-rose-400" />
-                Record Scrap & Defect Write-off
-              </h3>
-              <button
-                onClick={() => setIsScrapModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleRecordScrap} className="p-6 space-y-4 text-xs">
-              <div className="p-3 rounded-xl bg-slate-850 border border-slate-800">
-                <p className="text-[11px] text-slate-400">Batch Reference:</p>
-                <p className="text-sm font-bold text-white font-mono">{scrapBatch.batch_no}</p>
-                <p className="text-slate-300 text-xs mt-0.5">
-                  Stage: <strong className="text-amber-400 uppercase">{scrapBatch.current_stage}</strong> &bull; Available: <strong className="text-emerald-400">{scrapBatch.current_qty} pcs</strong>
-                </p>
+                  <option value="stitching">Stitching</option>
+                  <option value="ironing">Ironing & Finishing</option>
+                  <option value="qc">Quality Check (QC)</option>
+                  <option value="packing">Packing</option>
+                  <option value="dispatch">Dispatch / Finished</option>
+                </select>
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Scrap Quantity (Pcs) *</label>
+                <label className="font-semibold text-slate-300">Quantity to Send (Pieces) *</label>
                 <input
                   type="number"
-                  min={1}
-                  max={scrapBatch.current_qty}
                   required
-                  value={scrapQty}
-                  onChange={(e) => setScrapQty(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  min={1}
+                  max={selectedBatch.current_qty}
+                  value={sentQty}
+                  onChange={(e) => setSentQty(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-sm"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Defect Reason *</label>
-                <textarea
-                  rows={2}
-                  required
-                  placeholder="e.g. Needle cut hole during stitching, color shading variance..."
-                  value={scrapReason}
-                  onChange={(e) => setScrapReason(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                <label className="font-semibold text-slate-300">Transfer Notes / Trolley #</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Trolley #4 to Floor Line 2"
+                  value={moveNotes}
+                  onChange={(e) => setMoveNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white"
                 />
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsScrapModalOpen(false)}
+                  onClick={() => setIsMoveOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-md shadow-rose-600/30"
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/30"
                 >
-                  Deduct & Reconcile Scrap
+                  Initiate Stage Transfer
                 </button>
               </div>
             </form>

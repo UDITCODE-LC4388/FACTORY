@@ -108,14 +108,16 @@ export default function SaleOrdersPage() {
     }
   };
 
-  const handleSendWhatsApp = (order: (typeof saleOrders)[0]) => {
+  const handleSendWhatsApp = async (order: (typeof saleOrders)[0]) => {
     const party = parties.find((p) => p.id === order.party_id);
     if (!party) return;
     const msg = `Namaste ${party.name}, your Sale Order #${order.number} for ${formatINR(
       order.total_amount
     )} has been recorded at ${factory.name}. Production is scheduled.`;
-    sendWhatsAppNotification(party.phone, party.name, msg, 'sale_orders', order.id);
-    alert(`WhatsApp notification sent to ${party.name} (${party.phone})!`);
+    const res = await sendWhatsAppNotification(party.phone, party.name, msg, 'sale_orders', order.id);
+    if (res.directUrl) {
+      window.open(res.directUrl, '_blank');
+    }
   };
 
   const canEdit = ['owner', 'master', 'accountant'].includes(currentProfile.role);

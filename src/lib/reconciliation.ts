@@ -19,7 +19,7 @@ export interface BatchTraceabilityCheck {
 export const STAGE_ORDER: FactoryStage[] = [
   'cutting',
   'stitching',
-  'washing',
+  'ironing',
   'qc',
   'packing',
   'dispatch',
@@ -41,11 +41,11 @@ export const STAGE_CONFIG: Record<
     bgLight: 'bg-blue-500/10 border-blue-500/30',
     icon: 'Shirt',
   },
-  washing: {
-    label: 'Washing / Dyeing',
+  ironing: {
+    label: 'Ironing & Finishing',
     color: 'text-cyan-700 dark:text-cyan-400',
     bgLight: 'bg-cyan-500/10 border-cyan-500/30',
-    icon: 'Waves',
+    icon: 'Sparkles',
   },
   qc: {
     label: 'Quality Check (QC)',

@@ -21,7 +21,7 @@ CREATE TYPE user_role AS ENUM (
 CREATE TYPE factory_stage AS ENUM (
     'cutting',
     'stitching',
-    'washing',
+    'ironing',
     'qc',
     'packing',
     'dispatch'
@@ -483,6 +483,75 @@ CREATE TABLE IF NOT EXISTS batch_write_offs (
     reason TEXT NOT NULL,
     recorded_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 6.1 ROAD CHALLANS & OUTSIDE JOB WORK
+CREATE TABLE IF NOT EXISTS job_workers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    factory_id UUID NOT NULL REFERENCES factories(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT,
+    process_type TEXT NOT NULL DEFAULT 'making',
+    default_rate NUMERIC DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS road_challans (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    factory_id UUID NOT NULL REFERENCES factories(id) ON DELETE CASCADE,
+    challan_no TEXT NOT NULL,
+    challan_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    job_worker_id UUID NOT NULL REFERENCES job_workers(id) ON DELETE CASCADE,
+    process_type TEXT NOT NULL DEFAULT 'making',
+    status TEXT NOT NULL DEFAULT 'dispatched',
+    photo_url TEXT,
+    notes TEXT,
+    completion_date DATE,
+    stamp_image TEXT,
+    created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS road_challan_lots (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    factory_id UUID NOT NULL REFERENCES factories(id) ON DELETE CASCADE,
+    challan_id UUID NOT NULL REFERENCES road_challans(id) ON DELETE CASCADE,
+    lot_no TEXT NOT NULL,
+    article TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT 'Standard',
+    rate_per_pc NUMERIC DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS road_challan_size_lines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    lot_id UUID NOT NULL REFERENCES road_challan_lots(id) ON DELETE CASCADE,
+    size TEXT NOT NULL,
+    dispatched_qty NUMERIC NOT NULL DEFAULT 0,
+    returned_qty NUMERIC,
+    shortage_qty NUMERIC
+);
+
+CREATE TABLE IF NOT EXISTS outside_job_works (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    factory_id UUID NOT NULL REFERENCES factories(id) ON DELETE CASCADE,
+    challan_id UUID REFERENCES road_challans(id) ON DELETE SET NULL,
+    vendor_name TEXT NOT NULL,
+    phone TEXT,
+    process TEXT NOT NULL DEFAULT 'making',
+    batch_no TEXT NOT NULL,
+    article TEXT NOT NULL,
+    pieces_sent NUMERIC NOT NULL DEFAULT 0,
+    pieces_returned NUMERIC NOT NULL DEFAULT 0,
+    rate_per_piece NUMERIC NOT NULL DEFAULT 0,
+    total_approx_cost NUMERIC NOT NULL DEFAULT 0,
+    dispatch_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    expected_return_date DATE,
+    actual_return_date DATE,
+    status TEXT NOT NULL DEFAULT 'sent',
+    variance NUMERIC DEFAULT 0,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 7. AGENTS MODULE
