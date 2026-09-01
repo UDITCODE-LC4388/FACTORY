@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
-import { ParsedPurchaseOrder } from '@/lib/po-parser';
+import { ParsedPurchaseOrder, parseMultiOrderPOText } from '@/lib/po-parser';
 import { formatINR } from '@/lib/gst';
 import {
   Upload,
@@ -81,32 +81,82 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
     setParsedMethod('');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (geminiApiKey.trim()) {
-        formData.append('apiKey', geminiApiKey.trim());
+      const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+
+      if (isPdf) {
+        // Direct in-browser ultra-fast extraction (handles 50+ MB PDFs with 0 network payload limits)
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = new Uint8Array(arrayBuffer);
+        const { extractText } = await import('unpdf');
+        const { text } = await extractText(buffer);
+        const pagesArray = Array.isArray(text) ? text : [typeof text === 'string' ? text : ''];
+        
+        let orders = parseMultiOrderPOText(pagesArray);
+
+        // If Gemini API Key is configured, optionally enrich via AI using clean lightweight text payload (<100 KB)
+        if (geminiApiKey.trim() && pagesArray.join('').trim().length > 0) {
+          try {
+            const formData = new FormData();
+            formData.append('text', pagesArray.join('\n\n---PAGE---\n\n'));
+            formData.append('apiKey', geminiApiKey.trim());
+
+            const res = await fetch('/api/parse-po', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (res.ok) {
+              const aiData = await res.json();
+              if (aiData.success && aiData.orders && aiData.orders.length > 0) {
+                orders = aiData.orders;
+                setParsedMethod('gemini-vision');
+              }
+            }
+          } catch (aiErr) {
+            console.warn('Gemini text enrichment error, using local extractor:', aiErr);
+          }
+        }
+
+        if (!orders || orders.length === 0) {
+          throw new Error('No valid purchase orders could be extracted from this PDF.');
+        }
+
+        setParsedOrders(orders);
+        setSelectedOrderIndex(0);
+        setSelectedMultiIndices(orders.map((_item: ParsedPurchaseOrder, idx: number) => idx));
+        if (!parsedMethod) {
+          setParsedMethod('local-engine');
+        }
+      } else {
+        // Images (PNG, JPG, WEBP) -> send to API route for OCR / Vision
+        const formData = new FormData();
+        formData.append('file', file);
+        if (geminiApiKey.trim()) {
+          formData.append('apiKey', geminiApiKey.trim());
+        }
+
+        const res = await fetch('/api/parse-po', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to parse image file');
+        }
+
+        const orders: ParsedPurchaseOrder[] = data.orders;
+        if (!orders || orders.length === 0) {
+          throw new Error('No valid purchase orders could be extracted from this image.');
+        }
+
+        setParsedOrders(orders);
+        setSelectedOrderIndex(0);
+        setSelectedMultiIndices(orders.map((_item: ParsedPurchaseOrder, idx: number) => idx));
+        setParsedMethod(data.parsedWith || 'engine');
       }
-
-      const res = await fetch('/api/parse-po', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to parse PO document');
-      }
-
-      const orders: ParsedPurchaseOrder[] = data.orders;
-      if (!orders || orders.length === 0) {
-        throw new Error('No valid purchase orders could be extracted from this document.');
-      }
-
-      setParsedOrders(orders);
-      setSelectedOrderIndex(0);
-      setSelectedMultiIndices(orders.map((_, idx) => idx));
-      setParsedMethod(data.parsedWith || 'engine');
     } catch (err: unknown) {
+      console.error('PO Parsing error:', err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsParsing(false);
