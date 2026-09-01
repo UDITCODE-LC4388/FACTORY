@@ -13,10 +13,19 @@ import {
   X,
   MessageSquare,
   Sparkles,
+  Printer,
+  FileText,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { WhatsAppModal } from '@/components/common/whatsapp-modal';
 import { WhatsAppTemplates } from '@/lib/whatsapp';
+import { CreateInvoiceModal } from '@/components/billing/create-invoice-modal';
+import { POUploadModal } from '@/components/billing/po-upload-modal';
+import { TaxInvoiceTemplate } from '@/components/billing/tax-invoice-template';
+import { generateInvoicePDF } from '@/lib/pdf-generator';
+import { Invoice } from '@/types/database.types';
 
 export default function SaleOrdersPage() {
   const router = useRouter();
@@ -33,6 +42,9 @@ export default function SaleOrdersPage() {
   } = useFactory();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPOUploadModalOpen, setIsPOUploadModalOpen] = useState(false);
+  const [billingOrderId, setBillingOrderId] = useState<string | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [partyId, setPartyId] = useState(parties[0]?.id || '');
   const [orderNumber, setOrderNumber] = useState('');
   const [notes, setNotes] = useState('');
@@ -153,13 +165,22 @@ export default function SaleOrdersPage() {
         </div>
 
         {canEdit && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition self-start sm:self-auto"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Create Sale Order</span>
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button
+              onClick={() => setIsPOUploadModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+            >
+              <Upload className="h-4 w-4" />
+              <span>Upload PO (PDF / Image)</span>
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Manual Entry</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -178,96 +199,106 @@ export default function SaleOrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {saleOrders.map((order) => {
-                const party = parties.find((p) => p.id === order.party_id);
-                const totalPieces = (order.items || []).reduce((sum, it) => sum + it.qty, 0);
-
-                return (
-                  <tr key={order.id} className="hover:bg-slate-800/40 transition">
-                    <td className="py-3.5 px-4 font-semibold text-white">
-                      <div className="flex flex-col">
-                        <span className="font-mono text-blue-400">{order.number}</span>
-                        <span className="text-[11px] text-slate-400 font-normal">
-                          {order.date}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-medium text-white">
-                      <div>
-                        <span>{party?.name || 'Customer'}</span>
-                        <p className="text-[11px] text-slate-400 font-normal">
-                          {party?.state} (GST: {party?.gstin || 'None'})
-                        </p>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300">
-                      <span className="font-bold text-white">{totalPieces} Pcs</span>
-                      <p className="text-[11px] text-slate-400">
-                        {(order.items || []).map((it) => it.description).join(', ')}
-                      </p>
-                    </td>
-                    <td className="py-3.5 px-4 font-bold text-emerald-400 text-sm">
-                      {formatINR(order.total_amount)}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                          order.status === 'invoiced'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                        }`}
-                      >
-                        {order.status}
+              {saleOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <ShoppingCart className="h-8 w-8 text-slate-600" />
+                      <span className="font-bold text-slate-300">No Sale Orders Yet</span>
+                      <span className="text-xs text-slate-500">
+                        Upload a PO document (PDF/Image) or enter an order manually to start billing.
                       </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {order.status === 'draft' && canEdit && (
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                saleOrders.map((order) => {
+                  const party = parties.find((p) => p.id === order.party_id);
+                  const totalPieces = (order.items || []).reduce((sum, it) => sum + it.qty, 0);
+
+                  return (
+                    <tr key={order.id} className="hover:bg-slate-800/40 transition">
+                      <td className="py-3.5 px-4 font-semibold text-white">
+                        <div className="flex flex-col">
+                          <span className="font-mono text-blue-400">{order.number}</span>
+                          <span className="text-[11px] text-slate-400 font-normal">
+                            {order.date}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 font-medium text-white">
+                        <div>
+                          <span>{party?.name || 'Customer'}</span>
+                          <p className="text-[11px] text-slate-400 font-normal">
+                            {party?.state} (GST: {party?.gstin || 'None'})
+                          </p>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-300">
+                        <span className="font-bold text-white">{totalPieces} Pcs</span>
+                        <p className="text-[11px] text-slate-400">
+                          {(order.items || []).map((it) => it.description).join(', ')}
+                        </p>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-emerald-400 text-sm">
+                        {formatINR(order.total_amount)}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                            order.status === 'invoiced'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          }`}
+                        >
+                          {order.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {order.status === 'draft' && canEdit && (
+                            <button
+                              onClick={() => setBillingOrderId(order.id)}
+                              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+                              title="Generate Tax Invoice from this PO (Pre-fills all items, just enter date)"
+                            >
+                              <Sparkles className="h-3.5 w-3.5" />
+                              <span>Bill this PO</span>
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleConvertToInvoice(order.id)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm transition"
-                            title="Atomic DB conversion to Tax Invoice & Finished Stock Deduction"
+                            onClick={() => handleSendWhatsApp(order)}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-950 text-emerald-400 border border-slate-700 transition"
+                            title="Send WhatsApp Order Confirmation"
                           >
-                            <FileCheck2 className="h-3.5 w-3.5" />
-                            <span>Convert to Invoice</span>
+                            <MessageSquare className="h-3.5 w-3.5" />
                           </button>
-                        )}
-                        <button
-                          onClick={() => handleSendWhatsApp(order)}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-950 text-emerald-400 border border-slate-700"
-                          title="Send WhatsApp Order Confirmation"
-                        >
-                          <MessageSquare className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Delete sale order ${order.number}?`)) {
-                              deleteSaleOrder(order.id);
-                            }
-                          }}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700"
-                          title="Delete Order"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                          <button
+                            onClick={() => deleteSaleOrder(order.id)}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 transition"
+                            title="Delete Sale Order"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Create Sale Order Modal */}
+      {/* Modal 1: Create Sale Order Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/50">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <ShoppingCart className="h-4 w-4 text-blue-400" />
-                Create New Sale Order
+                Book New Buyer Purchase Order / Sale Order
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -277,10 +308,10 @@ export default function SaleOrdersPage() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateOrder} className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+            <form onSubmit={handleCreateOrder} className="p-6 space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Customer Party *</label>
+                  <label className="font-semibold text-slate-300">Customer (Party) *</label>
                   <select
                     value={partyId}
                     onChange={(e) => setPartyId(e.target.value)}
@@ -295,95 +326,92 @@ export default function SaleOrdersPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">Order Number (Optional)</label>
+                  <label className="font-semibold text-slate-300">Buyer's PO Number / Ref</label>
                   <input
                     type="text"
-                    placeholder="Auto-generated e.g. SO-2026-002"
+                    placeholder="e.g. PO/MB/2026/01 or PO-50995"
                     value={orderNumber}
                     onChange={(e) => setOrderNumber(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
               {/* Line Items Section */}
-              <div className="space-y-2 pt-2 border-t border-slate-800">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="font-bold text-white">Order Line Items / Garments</label>
+                  <span className="font-semibold text-slate-300">Order Line Items</span>
                   <button
                     type="button"
                     onClick={handleAddItem}
-                    className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
+                    className="text-[11px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1"
                   >
-                    <Plus className="h-3.5 w-3.5" /> Add Garment Line
+                    <Plus className="h-3 w-3" /> Add Item
                   </button>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {lineItems.map((item, idx) => (
                     <div
                       key={idx}
-                      className="p-3 rounded-xl bg-slate-850 border border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center"
+                      className="grid grid-cols-12 gap-2 p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 items-center"
                     >
-                      <div className="sm:col-span-5">
-                        <label className="text-[10px] text-slate-400 block mb-0.5">Product</label>
-                        <select
-                          value={item.product_id}
-                          onChange={(e) => handleProductSelect(idx, e.target.value)}
-                          className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs"
-                        >
-                          {products.map((pr) => (
-                            <option key={pr.id} value={pr.id}>
-                              {pr.name} (Stock: {pr.stock_qty})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <label className="text-[10px] text-slate-400 block mb-0.5">Qty (Pcs)</label>
+                      <div className="col-span-5">
                         <input
-                          type="number"
-                          min={1}
-                          value={item.qty}
+                          type="text"
+                          placeholder="Item Description"
+                          value={item.description}
                           onChange={(e) => {
                             const updated = [...lineItems];
-                            updated[idx].qty = Number(e.target.value) || 1;
+                            updated[idx].description = e.target.value;
                             setLineItems(updated);
                           }}
                           className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs"
                         />
                       </div>
 
-                      <div className="sm:col-span-2">
-                        <label className="text-[10px] text-slate-400 block mb-0.5">Rate (₹)</label>
-                        <input
-                          type="number"
-                          value={item.price}
-                          onChange={(e) => {
-                            const updated = [...lineItems];
-                            updated[idx].price = Number(e.target.value) || 0;
-                            setLineItems(updated);
-                          }}
-                          className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs"
-                        />
+                      <div className="col-span-3">
+                        <div className="relative">
+                          <input
+                            type="number"
+                            placeholder="Qty"
+                            value={item.qty}
+                            onChange={(e) => {
+                              const updated = [...lineItems];
+                              updated[idx].qty = Number(e.target.value);
+                              setLineItems(updated);
+                            }}
+                            className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs font-bold"
+                          />
+                          <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">Pcs</span>
+                        </div>
                       </div>
 
-                      <div className="sm:col-span-2">
-                        <label className="text-[10px] text-slate-400 block mb-0.5">Total</label>
-                        <span className="font-bold text-slate-200 text-xs block py-1">
-                          {formatINR(item.qty * item.price)}
-                        </span>
+                      <div className="col-span-3">
+                        <div className="relative">
+                          <span className="absolute left-2 top-1.5 text-slate-400">₹</span>
+                          <input
+                            type="number"
+                            placeholder="Rate"
+                            value={item.price}
+                            onChange={(e) => {
+                              const updated = [...lineItems];
+                              updated[idx].price = Number(e.target.value);
+                              setLineItems(updated);
+                            }}
+                            className="w-full pl-5 pr-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs font-bold text-emerald-400"
+                          />
+                        </div>
                       </div>
 
-                      <div className="sm:col-span-1 text-right">
+                      <div className="col-span-1 text-right">
                         {lineItems.length > 1 && (
                           <button
                             type="button"
                             onClick={() => handleRemoveItem(idx)}
-                            className="p-1 rounded text-rose-400 hover:bg-rose-950/40"
+                            className="p-1 text-slate-500 hover:text-rose-400"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
@@ -393,10 +421,10 @@ export default function SaleOrdersPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Order Delivery Notes</label>
+                <label className="font-semibold text-slate-300">Order Delivery Terms / Notes</label>
                 <textarea
                   rows={2}
-                  placeholder="Special packing instructions or delivery deadlines..."
+                  placeholder="Terms of delivery, destination, despatch details..."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -423,7 +451,98 @@ export default function SaleOrdersPage() {
         </div>
       )}
 
-      {/* Modal 2: WhatsApp Dispatcher */}
+      {/* Modal 2: 1-Click Bill this PO Modal */}
+      {billingOrderId && (
+        <CreateInvoiceModal
+          isOpen={!!billingOrderId}
+          initialSaleOrderId={billingOrderId}
+          onClose={() => setBillingOrderId(null)}
+          onSuccess={(createdInv, shouldPrint) => {
+            setBillingOrderId(null);
+            if (shouldPrint) {
+              setPreviewInvoice(createdInv);
+            } else {
+              router.push(`/sell/invoices?search=${encodeURIComponent(createdInv.number)}`);
+            }
+          }}
+        />
+      )}
+
+      {/* Modal 3: Exact Tax Invoice Print Preview */}
+      {previewInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-4xl max-h-[96vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col my-auto">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/90 print:hidden">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Tax Invoice — {previewInvoice.number}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Print Document</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    const p = parties.find((pt) => pt.id === previewInvoice.party_id) || previewInvoice.party || parties[0];
+                    const b = previewInvoice.buyer_party_id ? (parties.find((pt) => pt.id === previewInvoice.buyer_party_id) || previewInvoice.buyer) : undefined;
+                    await generateInvoicePDF(previewInvoice, factory, p, b);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  onClick={() => setPreviewInvoice(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-8 overflow-y-auto bg-neutral-900 flex justify-center print:p-0 print:bg-white">
+              {(() => {
+                const party = parties.find((p) => p.id === previewInvoice.party_id) || previewInvoice.party || parties[0];
+                const buyer = previewInvoice.buyer_party_id ? (parties.find((p) => p.id === previewInvoice.buyer_party_id) || previewInvoice.buyer) : undefined;
+                return (
+                  <TaxInvoiceTemplate
+                    invoice={previewInvoice}
+                    factory={factory}
+                    party={party}
+                    buyer={buyer}
+                  />
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 4: PO Document (PDF / Image) Upload & Instant Billing Modal */}
+      {isPOUploadModalOpen && (
+        <POUploadModal
+          isOpen={isPOUploadModalOpen}
+          onClose={() => setIsPOUploadModalOpen(false)}
+          onSuccess={(createdInv, shouldPrint) => {
+            setIsPOUploadModalOpen(false);
+            if (shouldPrint) {
+              setPreviewInvoice(createdInv);
+            } else {
+              router.push(`/sell/invoices?search=${encodeURIComponent(createdInv.number)}`);
+            }
+          }}
+        />
+      )}
+
+      {/* Modal 5: WhatsApp Dispatcher */}
       {whatsAppModalData && (
         <WhatsAppModal
           isOpen={!!whatsAppModalData}

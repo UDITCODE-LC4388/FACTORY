@@ -52,17 +52,99 @@ import { calculateGST } from '../gst';
 import { computeBatchReconciliation } from '../reconciliation';
 import { createClient } from '@/lib/supabase/client';
 
-// Default initial factory setup
+// Default initial factory setup - MANISHA GARMENTS
 const INITIAL_FACTORY: Factory = {
   id: '11111111-1111-1111-1111-111111111111',
-  name: 'Manisha Garments',
-  gstin: '27AAAAA0000A1Z5',
-  state: 'Maharashtra',
-  state_code: '27',
-  address: 'Industrial Area, Phase 1, Bhiwandi',
+  name: 'MANISHA GARMENTS',
+  gstin: '19AGGPB3696R1ZM',
+  state: 'West Bengal',
+  state_code: '19',
+  address: 'NA,34-35/2/1 SITA RAM SUPER MARKET\nSRI AUROBINDRA ROAD ,SALKIA\nHOWRAH-711106',
   phone: '+91 98000 00000',
+  pan: 'AGGPB3696R',
+  bank_name: 'UNION BANK OF INDIA C/A',
+  bank_account_no: '397001010230872',
+  bank_branch_ifsc: 'M.G.ROAD KOLKTA & UBIN0539708',
   created_at: new Date().toISOString(),
 };
+
+// Seed Parties (Directory as single source of truth)
+const INITIAL_PARTIES: Party[] = [
+  {
+    id: '55555555-5555-5555-5555-555555555501',
+    factory_id: INITIAL_FACTORY.id,
+    name: 'MADO BAZAAR',
+    type: 'customer',
+    phone: '+91 98310 12345',
+    gstin: '19AAQCM5944G1ZW',
+    pan: 'AAQCM5944G',
+    state: 'West Bengal',
+    state_code: '19',
+    address: '032,2nd NORTH ,SS HOG MARKET KOLKATA',
+    balance: 5250,
+    bank_name: 'HDFC BANK',
+    bank_account_no: '50200019284712',
+    bank_branch_ifsc: 'NEW MARKET KOLKATA & HDFC0000014',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: '55555555-5555-5555-5555-555555555502',
+    factory_id: INITIAL_FACTORY.id,
+    name: 'V BAZAAR RETAIL PVT LTD',
+    type: 'customer',
+    phone: '+91 98110 54321',
+    gstin: '06AAFCV3666D1ZC',
+    pan: 'AAFCV3666D',
+    state: 'Haryana',
+    state_code: '06',
+    address: 'KHEWAT/KHATA NO 721/789 AND 491/542\nMU.NO,57&58,VILLAGE PATHREDI,BILASPUR TAURU ROAD\nTEH MANESAR,DISTRICT-GURUGRAM,HARYANA-122413',
+    balance: 63554,
+    bank_name: 'ICICI BANK LTD',
+    bank_account_no: '000705018294',
+    bank_branch_ifsc: 'CONNAUGHT PLACE & ICIC0000007',
+    is_through_buyer_default: true,
+    default_buyer_party_id: '55555555-5555-5555-5555-555555555504',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: '55555555-5555-5555-5555-555555555503',
+    factory_id: INITIAL_FACTORY.id,
+    name: 'PRIMART',
+    type: 'customer',
+    phone: '+91 98300 98765',
+    gstin: '19AABCG6822C2ZT',
+    pan: 'AABCG6822C',
+    state: 'West Bengal',
+    state_code: '19',
+    address: 'LOHARUKA ,INFRASTRUCTURE PRIVATE LIMITED\nKHATIAN NO 871 MOUZA-PANDIT SATHGHARA\nVILLAGE-SIMLA P.S -SHRIRAMPUR\nDIST HOOGHLY',
+    balance: 26565,
+    bank_name: 'STATE BANK OF INDIA',
+    bank_account_no: '38192019481',
+    bank_branch_ifsc: 'SHRIRAMPUR & SBIN0000182',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: '55555555-5555-5555-5555-555555555504',
+    factory_id: INITIAL_FACTORY.id,
+    name: 'JM JAIN LLP',
+    type: 'customer',
+    phone: '+91 98100 11223',
+    gstin: '07AAQFJ2019Q1ZT',
+    pan: 'AAQFJ2019Q',
+    state: 'Delhi',
+    state_code: '07',
+    address: '2285/9. GALI HINGA BAG. TILAK BAZAR\nDELHI-110006',
+    balance: 0,
+    bank_name: 'AXIS BANK LTD',
+    bank_account_no: '918020049182741',
+    bank_branch_ifsc: 'CHANDNI CHOWK DELHI & UTIB0000032',
+    created_at: new Date().toISOString(),
+  },
+];
+
+// Clean slate: No hardcoded or pre-assumed bills or sale orders
+const INITIAL_INVOICES: Invoice[] = [];
+const INITIAL_SALE_ORDERS: SaleOrder[] = [];
 
 // Real factory team members
 const INITIAL_PROFILES: Profile[] = [
@@ -145,7 +227,19 @@ interface FactoryContextType {
 
   // Actions / Atomic RPCs
   createSaleOrder: (data: Partial<SaleOrder>, items: Array<Partial<SaleOrderItem>>) => SaleOrder;
-  convertSaleOrderToInvoice: (saleOrderId: string, saleType?: SaleType) => Invoice;
+  convertSaleOrderToInvoice: (
+    saleOrderId: string,
+    options?: {
+      date?: string;
+      invoiceNumber?: string;
+      saleType?: SaleType;
+      deliveryNote?: string;
+      supplierRef?: string;
+      roundOff?: number;
+    } | SaleType
+  ) => Invoice;
+  createDirectInvoice: (data: Partial<Invoice>, items: Array<Partial<InvoiceItem>>) => Invoice;
+  updateInvoice: (invoiceId: string, data: Partial<Invoice>, items?: Array<Partial<InvoiceItem>>) => Invoice;
   recordPaymentIn: (data: { party_id: string; invoice_id?: string; amount: number; mode: PaymentMode; reference_no?: string; notes?: string }) => PaymentIn;
   createPurchaseOrder: (data: Partial<PurchaseOrder>, items: Array<Partial<PurchaseOrderItem>>) => PurchaseOrder;
   postPurchaseBill: (poId: string, billNumber: string, items: Array<{ material_id: string; qty: number; price: number; gst_percent: number }>) => PurchaseBill;
@@ -245,7 +339,7 @@ interface FactoryContextType {
 
 const FactoryContext = createContext<FactoryContextType | null>(null);
 
-const STORAGE_KEY = 'factoryos_store_v6_full';
+const STORAGE_KEY = 'factoryos_store_v9_clean_pipeline';
 const BROADCAST_CHANNEL_NAME = 'factoryos_realtime_bus';
 
 export function FactoryProvider({ children }: { children: React.ReactNode }) {
@@ -253,14 +347,14 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
   const [profiles] = useState<Profile[]>(INITIAL_PROFILES);
   const [currentProfileId, setCurrentProfileId] = useState<string>(INITIAL_PROFILES[0].id);
 
-  // Clean data stores
-  const [parties, setParties] = useState<Party[]>([]);
+  // Clean data stores with pre-seeded billing parties, POs and invoices
+  const [parties, setParties] = useState<Party[]>(INITIAL_PARTIES);
   const [categories, setCategories] = useState<Category[]>(STANDARD_CATEGORIES);
   const [units, setUnits] = useState<Unit[]>(STANDARD_UNITS);
   const [products, setProducts] = useState<Product[]>([]);
   const [services] = useState<Service[]>([]);
-  const [saleOrders, setSaleOrders] = useState<SaleOrder[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [saleOrders, setSaleOrders] = useState<SaleOrder[]>(INITIAL_SALE_ORDERS);
+  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
   const [paymentsIn, setPaymentsIn] = useState<PaymentIn[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [purchaseBills, setPurchaseBills] = useState<PurchaseBill[]>([]);
@@ -622,9 +716,17 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
 
   const createSaleOrder = useCallback((data: Partial<SaleOrder>, items: Array<Partial<SaleOrderItem>>): SaleOrder => {
     const orderId = crypto.randomUUID();
-    const orderNumber = data.number || `SO-${new Date().getFullYear()}-${String(saleOrders.length + 1).padStart(3, '0')}`;
+    const orderNumber = data.number?.trim() || data.buyer_order_no?.trim() || `PO-${new Date().getFullYear()}-${String(saleOrders.length + 1).padStart(3, '0')}`;
     
     const party = parties.find((p) => p.id === data.party_id);
+    const buyer = (data.is_through_buyer && data.buyer_party_id)
+      ? parties.find((p) => p.id === data.buyer_party_id) || data.buyer || party
+      : party;
+
+    const destinationStateCode = (data.is_through_buyer && buyer)
+      ? buyer.state_code
+      : (party?.state_code || factory.state_code);
+
     const orderItems: SaleOrderItem[] = items.map((it) => {
       const prod = products.find((p) => p.id === it.product_id);
       return {
@@ -633,9 +735,11 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         sale_order_id: orderId,
         product_id: it.product_id,
         description: it.description || prod?.name || 'Garment item',
-        hsn_code: it.hsn_code || prod?.hsn_code || '61091000',
+        hsn_code: it.hsn_code || prod?.hsn_code || '610990',
         qty: Number(it.qty) || 1,
+        unit_symbol: it.unit_symbol || 'PCS',
         price: Number(it.price) || prod?.sale_price || 0,
+        discount_percent: Number(it.discount_percent) || 0,
         gst_percent: Number(it.gst_percent) || prod?.gst_percent || 5.0,
       };
     });
@@ -644,50 +748,242 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
       description: it.description,
       hsnCode: it.hsn_code,
       qty: it.qty,
+      unitSymbol: it.unit_symbol,
       price: it.price,
+      discountPercent: it.discount_percent,
       gstPercent: it.gst_percent,
     }));
-    const gstRes = calculateGST(factory.state_code, party?.state_code || factory.state_code, gstItems);
+    const gstRes = calculateGST(factory.state_code, destinationStateCode, gstItems, data.round_off);
+
+    const calculatedOrderItems: SaleOrderItem[] = gstRes.itemBreakdown.map((b, idx) => {
+      const orig = orderItems[idx];
+      return {
+        ...orig,
+        taxable_value: b.taxableValue,
+        cgst: b.cgst,
+        sgst: b.sgst,
+        igst: b.igst,
+        total: b.total,
+      };
+    });
 
     const newOrder: SaleOrder = {
       id: orderId,
       factory_id: factory.id,
       number: orderNumber,
       party_id: data.party_id!,
+      buyer_party_id: data.is_through_buyer ? data.buyer_party_id : undefined,
+      is_through_buyer: Boolean(data.is_through_buyer),
       date: data.date || new Date().toISOString().split('T')[0],
       status: 'draft',
       notes: data.notes || '',
+      buyer_order_no: data.buyer_order_no || orderNumber,
+      buyer_order_date: data.buyer_order_date || data.date || new Date().toISOString().split('T')[0],
+      supplier_ref: data.supplier_ref || orderNumber,
+      other_references: data.other_references || '',
+      delivery_note: data.delivery_note || '',
+      delivery_note_date: data.delivery_note_date || '',
+      despatch_doc_no: data.despatch_doc_no || '',
+      despatched_through: data.despatched_through || '',
+      destination: data.destination || (party?.state || ''),
+      terms_of_delivery: data.terms_of_delivery || '',
+      place_of_supply: data.place_of_supply || (buyer?.state ? buyer.state.toUpperCase() : ''),
+      round_off: gstRes.roundOff,
       total_amount: gstRes.totalAmount,
       created_by: currentProfile.id,
       created_at: new Date().toISOString(),
       party,
-      items: orderItems,
+      buyer: data.is_through_buyer ? buyer : party,
+      items: calculatedOrderItems,
     };
 
     setSaleOrders((prev) => [newOrder, ...prev]);
     return newOrder;
   }, [saleOrders.length, parties, products, factory.state_code, factory.id, currentProfile.id]);
 
-  const convertSaleOrderToInvoice = useCallback((saleOrderId: string, saleType: SaleType = 'credit'): Invoice => {
-    const order = saleOrders.find((so) => so.id === saleOrderId);
-    if (!order) throw new Error('Sale order not found');
-    if (order.status === 'invoiced') throw new Error('Order is already invoiced');
+  const convertSaleOrderToInvoice = useCallback(
+    (
+      saleOrderId: string,
+      options?: {
+        date?: string;
+        invoiceNumber?: string;
+        saleType?: SaleType;
+        deliveryNote?: string;
+        supplierRef?: string;
+        roundOff?: number;
+      } | SaleType
+    ): Invoice => {
+      const order = saleOrders.find((so) => so.id === saleOrderId);
+      if (!order) throw new Error('Sale order not found');
+      if (order.status === 'invoiced') throw new Error('Order is already invoiced');
 
-    const party = parties.find((p) => p.id === order.party_id);
-    if (!party) throw new Error('Party not found');
+      const party = parties.find((p) => p.id === order.party_id);
+      if (!party) throw new Error('Party not found');
 
-    const items = order.items || [];
+      const buyer = (order.is_through_buyer && order.buyer_party_id)
+        ? parties.find((p) => p.id === order.buyer_party_id) || order.buyer || party
+        : party;
+
+      const destinationStateCode = (order.is_through_buyer && buyer)
+        ? buyer.state_code
+        : party.state_code;
+
+      const items = order.items || [];
+      const gstItems = items.map((it) => ({
+        description: it.description,
+        hsnCode: it.hsn_code,
+        qty: Number(it.qty) || 1,
+        unitSymbol: it.unit_symbol || 'PCS',
+        price: Number(it.price) || 0,
+        discountPercent: Number(it.discount_percent) || 0,
+        gstPercent: typeof it.gst_percent === 'number' ? it.gst_percent : 5,
+      }));
+
+      const opts = typeof options === 'string' ? { saleType: options } : options;
+      const roundOffVal = opts?.roundOff !== undefined ? opts.roundOff : (order.round_off || 0);
+      const gstRes = calculateGST(factory.state_code, destinationStateCode, gstItems, roundOffVal);
+
+      const invoiceId = crypto.randomUUID();
+      const invoiceNumber = opts?.invoiceNumber?.trim() || `GST/MG/${String(invoices.length + 101)}/26-27`;
+      const invoiceDate = opts?.date || new Date().toISOString().split('T')[0];
+
+      const invoiceItems: InvoiceItem[] = gstRes.itemBreakdown.map((b, idx) => {
+        const origItem = items[idx];
+        return {
+          id: crypto.randomUUID(),
+          factory_id: factory.id,
+          invoice_id: invoiceId,
+          product_id: origItem?.product_id,
+          description: b.description,
+          hsn_code: b.hsnCode,
+          qty: b.qty,
+          unit_symbol: b.unitSymbol,
+          price: b.price,
+          discount_percent: b.discountPercent,
+          gst_percent: origItem?.gst_percent || 5,
+          taxable_value: b.taxableValue,
+          cgst: b.cgst,
+          sgst: b.sgst,
+          igst: b.igst,
+          total: b.total,
+        };
+      });
+
+      const newInvoice: Invoice = {
+        id: invoiceId,
+        factory_id: factory.id,
+        number: invoiceNumber,
+        sale_order_id: order.id,
+        party_id: party.id,
+        buyer_party_id: order.is_through_buyer ? order.buyer_party_id : undefined,
+        is_through_buyer: Boolean(order.is_through_buyer),
+        date: invoiceDate,
+        status: 'sent',
+        payment_status: 'unpaid',
+        sale_type: opts?.saleType || 'credit',
+        delivery_note: opts?.deliveryNote || order.delivery_note || '',
+        supplier_ref: opts?.supplierRef || order.supplier_ref || invoiceNumber,
+        other_references: order.other_references || '',
+        buyer_order_no: order.buyer_order_no || order.number,
+        buyer_order_date: order.buyer_order_date || order.date,
+        despatch_doc_no: order.despatch_doc_no || '',
+        delivery_note_date: order.delivery_note_date || '',
+        despatched_through: order.despatched_through || '',
+        destination: order.destination || '',
+        terms_of_delivery: order.terms_of_delivery || '',
+        place_of_supply: order.place_of_supply || (buyer?.state ? buyer.state.toUpperCase() : ''),
+        taxable_amount: gstRes.taxableAmount,
+        cgst: gstRes.cgst,
+        sgst: gstRes.sgst,
+        igst: gstRes.igst,
+        round_off: gstRes.roundOff,
+        total: gstRes.totalAmount,
+        paid_amount: 0,
+        created_by: currentProfile.id,
+        created_at: new Date().toISOString(),
+        party,
+        buyer: order.is_through_buyer ? buyer : party,
+        items: invoiceItems,
+        bank_name: factory.bank_name,
+        bank_account_no: factory.bank_account_no,
+        bank_branch_ifsc: factory.bank_branch_ifsc,
+      };
+
+      setInvoices((prev) => [newInvoice, ...prev]);
+
+      setSaleOrders((prev) =>
+        prev.map((so) =>
+          so.id === saleOrderId
+            ? { ...so, status: 'invoiced', invoice_id: invoiceId, invoiced_at: invoiceDate }
+            : so
+        )
+      );
+
+      // Update Party balance (Buyer if through buyer, otherwise consignee)
+      const targetPartyId = (order.is_through_buyer && order.buyer_party_id)
+        ? order.buyer_party_id
+        : party.id;
+
+      setParties((prev) =>
+        prev.map((p) =>
+          p.id === targetPartyId ? { ...p, balance: p.balance + gstRes.totalAmount } : p
+        )
+      );
+
+      const ledgerEntries: InventoryLedger[] = [];
+      items.forEach((item) => {
+        if (item.product_id) {
+          ledgerEntries.push({
+            id: crypto.randomUUID(),
+            factory_id: factory.id,
+            item_type: 'product',
+            item_id: item.product_id,
+            change_qty: -item.qty,
+            reason: `Sale Invoice Dispatch (${invoiceNumber})`,
+            ref_table: 'invoices',
+            ref_id: invoiceId,
+            created_by: currentProfile.id,
+            created_at: new Date().toISOString(),
+          });
+        }
+      });
+
+      if (ledgerEntries.length > 0) {
+        setInventoryLedger((prev) => [...ledgerEntries, ...prev]);
+      }
+
+      return newInvoice;
+    },
+    [saleOrders, parties, factory, invoices.length, currentProfile.id]
+  );
+
+  const createDirectInvoice = useCallback((
+    data: Partial<Invoice>,
+    items: Array<Partial<InvoiceItem>>
+  ): Invoice => {
+    const party = parties.find((p) => p.id === data.party_id);
+    if (!party) throw new Error('Party (Consignee) not found');
+
+    const buyer = data.is_through_buyer && data.buyer_party_id
+      ? parties.find((p) => p.id === data.buyer_party_id)
+      : party;
+
+    const destinationStateCode = buyer?.state_code || party.state_code;
+
     const gstItems = items.map((it) => ({
-      description: it.description,
-      hsnCode: it.hsn_code,
-      qty: it.qty,
-      price: it.price,
-      gstPercent: it.gst_percent,
+      description: it.description || 'Garment Item',
+      hsnCode: it.hsn_code || '610990',
+      qty: Number(it.qty) || 1,
+      unitSymbol: it.unit_symbol || 'PCS',
+      price: Number(it.price) || 0,
+      discountPercent: Number(it.discount_percent) || 0,
+      gstPercent: typeof it.gst_percent === 'number' ? it.gst_percent : 5,
     }));
-    const gstRes = calculateGST(factory.state_code, party.state_code, gstItems);
+
+    const gstRes = calculateGST(factory.state_code, destinationStateCode, gstItems, data.round_off);
 
     const invoiceId = crypto.randomUUID();
-    const invoiceNumber = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(invoices.length + 101)}`;
+    const invoiceNumber = data.number?.trim() || `GST/MG/${String(invoices.length + 101)}/26-27`;
 
     const invoiceItems: InvoiceItem[] = gstRes.itemBreakdown.map((b, idx) => {
       const origItem = items[idx];
@@ -699,8 +995,10 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         description: b.description,
         hsn_code: b.hsnCode,
         qty: b.qty,
+        unit_symbol: b.unitSymbol,
         price: b.price,
-        gst_percent: b.gstPercent,
+        discount_percent: b.discountPercent,
+        gst_percent: origItem?.gst_percent || 5,
         taxable_value: b.taxableValue,
         cgst: b.cgst,
         sgst: b.sgst,
@@ -713,60 +1011,140 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
       id: invoiceId,
       factory_id: factory.id,
       number: invoiceNumber,
-      sale_order_id: order.id,
+      sale_order_id: data.sale_order_id,
       party_id: party.id,
-      date: new Date().toISOString().split('T')[0],
-      status: 'sent',
-      payment_status: 'unpaid',
-      sale_type: saleType,
+      buyer_party_id: data.is_through_buyer ? data.buyer_party_id : undefined,
+      is_through_buyer: Boolean(data.is_through_buyer),
+      date: data.date || new Date().toISOString().split('T')[0],
+      status: data.status || 'sent',
+      payment_status: data.payment_status || 'unpaid',
+      sale_type: data.sale_type || 'credit',
+      delivery_note: data.delivery_note || '',
+      supplier_ref: data.supplier_ref || invoiceNumber,
+      other_references: data.other_references || '',
+      buyer_order_no: data.buyer_order_no || '',
+      buyer_order_date: data.buyer_order_date || '',
+      despatch_doc_no: data.despatch_doc_no || '',
+      delivery_note_date: data.delivery_note_date || '',
+      despatched_through: data.despatched_through || '',
+      destination: data.destination || '',
+      terms_of_delivery: data.terms_of_delivery || '',
+      place_of_supply: data.place_of_supply || (buyer?.state ? buyer.state.toUpperCase() : ''),
       taxable_amount: gstRes.taxableAmount,
       cgst: gstRes.cgst,
       sgst: gstRes.sgst,
       igst: gstRes.igst,
+      round_off: gstRes.roundOff,
       total: gstRes.totalAmount,
-      paid_amount: 0,
+      paid_amount: Number(data.paid_amount) || 0,
       created_by: currentProfile.id,
       created_at: new Date().toISOString(),
       party,
+      buyer: data.is_through_buyer ? buyer : party,
       items: invoiceItems,
+      bank_name: data.bank_name || factory.bank_name,
+      bank_account_no: data.bank_account_no || factory.bank_account_no,
+      bank_branch_ifsc: data.bank_branch_ifsc || factory.bank_branch_ifsc,
     };
 
     setInvoices((prev) => [newInvoice, ...prev]);
 
-    setSaleOrders((prev) =>
-      prev.map((so) => (so.id === saleOrderId ? { ...so, status: 'invoiced' } : so))
-    );
+    if (data.sale_order_id) {
+      setSaleOrders((prev) =>
+        prev.map((so) =>
+          so.id === data.sale_order_id
+            ? { ...so, status: 'invoiced', invoice_id: invoiceId, invoiced_at: newInvoice.date }
+            : so
+        )
+      );
+    }
 
+    // Update Party balance
+    const targetPartyId = (data.is_through_buyer && data.buyer_party_id) ? data.buyer_party_id : party.id;
     setParties((prev) =>
-      prev.map((p) => (p.id === party.id ? { ...p, balance: p.balance + gstRes.totalAmount } : p))
+      prev.map((p) => (p.id === targetPartyId ? { ...p, balance: p.balance + gstRes.totalAmount } : p))
     );
-
-    const ledgerEntries: InventoryLedger[] = [];
-    items.forEach((item) => {
-      if (item.product_id) {
-        ledgerEntries.push({
-          id: crypto.randomUUID(),
-          factory_id: factory.id,
-          item_type: 'product',
-          item_id: item.product_id,
-          change_qty: -item.qty,
-          reason: `Sale Invoice Dispatch (${invoiceNumber})`,
-          ref_table: 'invoices',
-          ref_id: invoiceId,
-          created_by: currentProfile.id,
-          created_at: new Date().toISOString(),
-        });
-
-        setProducts((prev) =>
-          prev.map((pr) => (pr.id === item.product_id ? { ...pr, stock_qty: pr.stock_qty - item.qty } : pr))
-        );
-      }
-    });
-
-    setInventoryLedger((prev) => [...ledgerEntries, ...prev]);
 
     return newInvoice;
-  }, [saleOrders, parties, factory.state_code, factory.id, invoices.length, currentProfile.id]);
+  }, [parties, factory, invoices.length, currentProfile.id]);
+
+  const updateInvoice = useCallback((
+    invoiceId: string,
+    data: Partial<Invoice>,
+    newItems?: Array<Partial<InvoiceItem>>
+  ): Invoice => {
+    const existing = invoices.find((i) => i.id === invoiceId);
+    if (!existing) throw new Error('Invoice not found');
+
+    const party = parties.find((p) => p.id === (data.party_id || existing.party_id)) || existing.party;
+    if (!party) throw new Error('Party not found');
+
+    const isThroughBuyer = data.is_through_buyer !== undefined ? data.is_through_buyer : existing.is_through_buyer;
+    const buyerId = data.buyer_party_id !== undefined ? data.buyer_party_id : existing.buyer_party_id;
+
+    const buyer = isThroughBuyer && buyerId
+      ? parties.find((p) => p.id === buyerId) || party
+      : party;
+
+    const itemsToProcess = newItems || existing.items || [];
+    const destinationStateCode = buyer?.state_code || party.state_code;
+
+    const gstItems = itemsToProcess.map((it) => ({
+      description: it.description || 'Garment Item',
+      hsnCode: it.hsn_code || '610990',
+      qty: Number(it.qty) || 1,
+      unitSymbol: it.unit_symbol || 'PCS',
+      price: Number(it.price) || 0,
+      discountPercent: Number(it.discount_percent) || 0,
+      gstPercent: typeof it.gst_percent === 'number' ? it.gst_percent : 5,
+    }));
+
+    const gstRes = calculateGST(
+      factory.state_code,
+      destinationStateCode,
+      gstItems,
+      data.round_off !== undefined ? data.round_off : existing.round_off
+    );
+
+    const updatedItems: InvoiceItem[] = gstRes.itemBreakdown.map((b, idx) => {
+      const origItem = itemsToProcess[idx];
+      return {
+        id: origItem?.id || crypto.randomUUID(),
+        factory_id: factory.id,
+        invoice_id: invoiceId,
+        product_id: origItem?.product_id,
+        description: b.description,
+        hsn_code: b.hsnCode,
+        qty: b.qty,
+        unit_symbol: b.unitSymbol,
+        price: b.price,
+        discount_percent: b.discountPercent,
+        gst_percent: origItem?.gst_percent || 5,
+        taxable_value: b.taxableValue,
+        cgst: b.cgst,
+        sgst: b.sgst,
+        igst: b.igst,
+        total: b.total,
+      };
+    });
+
+    const updatedInvoice: Invoice = {
+      ...existing,
+      ...data,
+      party,
+      buyer: isThroughBuyer ? buyer : party,
+      taxable_amount: gstRes.taxableAmount,
+      cgst: gstRes.cgst,
+      sgst: gstRes.sgst,
+      igst: gstRes.igst,
+      round_off: gstRes.roundOff,
+      total: gstRes.totalAmount,
+      items: updatedItems,
+    };
+
+    setInvoices((prev) => prev.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv)));
+    return updatedInvoice;
+  }, [invoices, parties, factory]);
 
   const recordPaymentIn = useCallback((data: {
     party_id: string;
@@ -1947,29 +2325,20 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteInvoice = useCallback((id: string) => {
-    const inv = invoices.find((i) => i.id === id);
-    if (inv) {
-      // Revert party balance
-      setParties((prev) =>
-        prev.map((p) => (p.id === inv.party_id ? { ...p, balance: p.balance - inv.total } : p))
-      );
-      // Revert product stocks
-      (inv.items || []).forEach((item) => {
-        if (item.product_id) {
-          setProducts((prev) =>
-            prev.map((pr) => (pr.id === item.product_id ? { ...pr, stock_qty: pr.stock_qty + item.qty } : pr))
-          );
-        }
-      });
-      // Revert sale order status if linked
-      if (inv.sale_order_id) {
-        setSaleOrders((prev) =>
-          prev.map((so) => (so.id === inv.sale_order_id ? { ...so, status: 'draft' } : so))
+    setInvoices((prevInvoices) => {
+      const inv = prevInvoices.find((i) => i.id === id);
+      if (inv && inv.sale_order_id) {
+        setSaleOrders((prevSO) =>
+          prevSO.map((so) =>
+            so.id === inv.sale_order_id
+              ? { ...so, status: 'draft', invoice_id: undefined, invoiced_at: undefined }
+              : so
+          )
         );
       }
-    }
-    setInvoices((prev) => prev.filter((i) => i.id !== id));
-  }, [invoices]);
+      return prevInvoices.filter((i) => i.id !== id);
+    });
+  }, []);
 
   const deletePaymentIn = useCallback((id: string) => {
     const pay = paymentsIn.find((p) => p.id === id);
@@ -2150,6 +2519,8 @@ export function FactoryProvider({ children }: { children: React.ReactNode }) {
         addProduct,
         createSaleOrder,
         convertSaleOrderToInvoice,
+        createDirectInvoice,
+        updateInvoice,
         recordPaymentIn,
         createPurchaseOrder,
         postPurchaseBill,

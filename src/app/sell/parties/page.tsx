@@ -3,28 +3,38 @@
 import React, { useState } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { formatINR, INDIAN_STATES } from '@/lib/gst';
-import { Party, PartyType } from '@/types/database.types';
-import { Users, Plus, Search, Phone, MapPin, Building, ShieldCheck, X, Trash2 } from 'lucide-react';
+import { Party, PartyType, Invoice } from '@/types/database.types';
+import { Users, Plus, Search, Phone, MapPin, Building, ShieldCheck, X, Trash2, FileText, Printer } from 'lucide-react';
+import { CreateInvoiceModal } from '@/components/billing/create-invoice-modal';
+import { TaxInvoiceTemplate } from '@/components/billing/tax-invoice-template';
+import { generateInvoicePDF } from '@/lib/pdf-generator';
 
 export default function PartiesPage() {
-  const { parties, addParty, deleteParty, currentProfile } = useFactory();
+  const { factory, parties, addParty, deleteParty, currentProfile } = useFactory();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [billingPartyId, setBillingPartyId] = useState<string | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
 
   // New Party Form State
   const [name, setName] = useState('');
   const [type, setType] = useState<PartyType>('customer');
   const [phone, setPhone] = useState('');
   const [gstin, setGstin] = useState('');
-  const [stateName, setStateName] = useState('Maharashtra');
+  const [pan, setPan] = useState('');
+  const [stateName, setStateName] = useState('West Bengal');
   const [address, setAddress] = useState('');
   const [openingBalance, setOpeningBalance] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankAccountNo, setBankAccountNo] = useState('');
+  const [bankBranchIfsc, setBankBranchIfsc] = useState('');
 
   const filteredParties = parties.filter((p) => {
     const matchSearch =
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.gstin?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.pan?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.phone?.includes(searchTerm);
     const matchType = selectedType === 'all' || p.type === selectedType || p.type === 'both';
     return matchSearch && matchType;
@@ -34,25 +44,33 @@ export default function PartiesPage() {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const stateObj = INDIAN_STATES.find((s) => s.name === stateName) || { name: 'Maharashtra', code: '27' };
+    const stateObj = INDIAN_STATES.find((s) => s.name === stateName) || { name: 'West Bengal', code: '19' };
 
     addParty({
       name,
       type,
       phone,
       gstin: gstin.toUpperCase(),
+      pan: pan.toUpperCase() || (gstin ? gstin.slice(2, 12).toUpperCase() : undefined),
       state: stateObj.name,
       state_code: stateObj.code,
       address,
       balance: Number(openingBalance) || 0,
+      bank_name: bankName,
+      bank_account_no: bankAccountNo,
+      bank_branch_ifsc: bankBranchIfsc,
     });
 
     setIsModalOpen(false);
     setName('');
     setPhone('');
     setGstin('');
+    setPan('');
     setAddress('');
     setOpeningBalance('');
+    setBankName('');
+    setBankAccountNo('');
+    setBankBranchIfsc('');
   };
 
   const canEdit = ['owner', 'master', 'accountant', 'purchase'].includes(currentProfile.role);
@@ -67,7 +85,7 @@ export default function PartiesPage() {
             Parties & Directory
           </h1>
           <p className="text-xs sm:text-sm text-slate-400">
-            Customers, raw material vendors, and jobwork processing units
+            Customers, buyers, raw material vendors, and jobwork processing units
           </p>
         </div>
 
@@ -122,6 +140,7 @@ export default function PartiesPage() {
                 <th className="py-3.5 px-4">Contact & Location</th>
                 <th className="py-3.5 px-4">GSTIN / State</th>
                 <th className="py-3.5 px-4 text-right">Outstanding Balance</th>
+                <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -135,8 +154,8 @@ export default function PartiesPage() {
                       <div>
                         <span>{party.name}</span>
                         {party.address && (
-                          <p className="text-[11px] text-slate-400 font-normal truncate max-w-xs">
-                            {party.address}
+                          <p className="text-[11px] text-slate-400 font-normal truncate max-w-xs whitespace-pre-line">
+                            {party.address.split('\n')[0]}
                           </p>
                         )}
                       </div>
@@ -174,36 +193,42 @@ export default function PartiesPage() {
                     <p className="text-[10px] text-slate-400">State Code: {party.state_code}</p>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <div>
-                        <span
-                          className={`font-bold ${
-                            party.balance > 0
-                              ? 'text-emerald-400'
-                              : party.balance < 0
-                              ? 'text-rose-400'
-                              : 'text-slate-400'
-                          }`}
-                        >
-                          {formatINR(Math.abs(party.balance))}
-                        </span>
-                        <p className="text-[10px] text-slate-500">
-                          {party.balance > 0
-                            ? '(Receivable)'
+                    <div>
+                      <span
+                        className={`font-bold ${
+                          party.balance > 0
+                            ? 'text-emerald-400'
                             : party.balance < 0
-                            ? '(Payable)'
-                            : 'Settled'}
-                        </p>
-                      </div>
+                            ? 'text-rose-400'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {formatINR(Math.abs(party.balance))}
+                      </span>
+                      <p className="text-[10px] text-slate-500">
+                        {party.balance > 0
+                          ? '(Receivable)'
+                          : party.balance < 0
+                          ? '(Payable)'
+                          : 'Settled'}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-4 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => setBillingPartyId(party.id)}
+                        className="px-2.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 text-xs font-bold flex items-center gap-1 transition shadow-sm"
+                        title="Create Tax Invoice for this party"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        <span>Create Bill</span>
+                      </button>
 
                       <button
-                        onClick={() => {
-                          if (confirm(`Delete party ${party.name}?`)) {
-                            deleteParty(party.id);
-                          }
-                        }}
+                        onClick={() => deleteParty(party.id)}
                         title="Delete Party"
-                        className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition"
+                        className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -278,7 +303,7 @@ export default function PartiesPage() {
                   <input
                     type="text"
                     maxLength={15}
-                    placeholder="27AAACF1029P1Z8"
+                    placeholder="19AAQCM5944G1ZW"
                     value={gstin}
                     onChange={(e) => setGstin(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -286,19 +311,31 @@ export default function PartiesPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300">GST State</label>
-                  <select
-                    value={stateName}
-                    onChange={(e) => setStateName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {INDIAN_STATES.map((s) => (
-                      <option key={s.code} value={s.name}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                  </select>
+                  <label className="font-semibold text-slate-300">PAN (10 Digit)</label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    placeholder="AAQCM5944G"
+                    value={pan}
+                    onChange={(e) => setPan(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-300">GST State</label>
+                <select
+                  value={stateName}
+                  onChange={(e) => setStateName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {INDIAN_STATES.map((s) => (
+                    <option key={s.code} value={s.name}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1">
@@ -310,6 +347,45 @@ export default function PartiesPage() {
                   onChange={(e) => setAddress(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              {/* Bank Details */}
+              <div className="p-3 rounded-xl bg-slate-850/60 border border-slate-800 space-y-2.5">
+                <span className="font-bold text-[11px] text-slate-300 uppercase tracking-wider block">
+                  Party Bank Account Details (Optional)
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400">Bank Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. HDFC Bank"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400">Account Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 50200019284712"
+                      value={bankAccountNo}
+                      onChange={(e) => setBankAccountNo(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400">Branch & IFSC</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. HOWRAH & HDFC0000014"
+                      value={bankBranchIfsc}
+                      onChange={(e) => setBankBranchIfsc(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs font-mono"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -340,6 +416,79 @@ export default function PartiesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Tax Invoice Modal for Selected Party */}
+      {billingPartyId && (
+        <CreateInvoiceModal
+          isOpen={!!billingPartyId}
+          initialPartyId={billingPartyId}
+          onClose={() => setBillingPartyId(null)}
+          onSuccess={(createdInv, shouldPrint) => {
+            setBillingPartyId(null);
+            if (shouldPrint) {
+              setPreviewInvoice(createdInv);
+            }
+          }}
+        />
+      )}
+
+      {/* Tax Invoice Print Preview Modal */}
+      {previewInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-4xl max-h-[96vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col my-auto">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/90 print:hidden">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">
+                  Tax Invoice — {previewInvoice.number}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Print Document</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    const p = parties.find((pt) => pt.id === previewInvoice.party_id) || previewInvoice.party || parties[0];
+                    const b = previewInvoice.buyer_party_id ? (parties.find((pt) => pt.id === previewInvoice.buyer_party_id) || previewInvoice.buyer) : undefined;
+                    await generateInvoicePDF(previewInvoice, factory, p, b);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  onClick={() => setPreviewInvoice(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-8 overflow-y-auto bg-neutral-900 flex justify-center print:p-0 print:bg-white">
+              {(() => {
+                const party = parties.find((p) => p.id === previewInvoice.party_id) || previewInvoice.party || parties[0];
+                const buyer = previewInvoice.buyer_party_id ? (parties.find((p) => p.id === previewInvoice.buyer_party_id) || previewInvoice.buyer) : undefined;
+                return (
+                  <TaxInvoiceTemplate
+                    invoice={previewInvoice}
+                    factory={factory}
+                    party={party}
+                    buyer={buyer}
+                  />
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}

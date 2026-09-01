@@ -40,6 +40,10 @@ export interface Factory {
   state_code: string;
   address?: string;
   phone?: string;
+  pan?: string;
+  bank_name?: string;
+  bank_account_no?: string;
+  bank_branch_ifsc?: string;
   created_at: string;
 }
 
@@ -61,10 +65,18 @@ export interface Party {
   type: PartyType;
   phone: string;
   gstin?: string;
+  pan?: string;
   state: string;
   state_code: string;
   address?: string;
   balance: number;
+  // Bank details for party directory
+  bank_name?: string;
+  bank_account_no?: string;
+  bank_branch_ifsc?: string;
+  // Buyer routing preference
+  is_through_buyer_default?: boolean;
+  default_buyer_party_id?: string;
   created_at: string;
 }
 
@@ -123,6 +135,24 @@ export interface SaleOrder {
   created_by: string;
   created_at: string;
   party?: Party;
+  // Advanced PO Fields
+  is_through_buyer?: boolean;
+  buyer_party_id?: string;
+  buyer?: Party;
+  buyer_order_no?: string;
+  buyer_order_date?: string;
+  supplier_ref?: string;
+  other_references?: string;
+  delivery_note?: string;
+  delivery_note_date?: string;
+  despatch_doc_no?: string;
+  despatched_through?: string;
+  destination?: string;
+  terms_of_delivery?: string;
+  place_of_supply?: string;
+  round_off?: number;
+  invoiced_at?: string;
+  invoice_id?: string;
   items?: SaleOrderItem[];
 }
 
@@ -135,8 +165,15 @@ export interface SaleOrderItem {
   description: string;
   hsn_code: string;
   qty: number;
+  unit_symbol?: string;
   price: number;
+  discount_percent?: number;
   gst_percent: number;
+  taxable_value?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  total?: number;
 }
 
 export interface Invoice {
@@ -144,22 +181,45 @@ export interface Invoice {
   factory_id: string;
   number: string;
   sale_order_id?: string;
-  party_id: string;
+  party_id: string; // Consignee / Primary party
+  buyer_party_id?: string; // Buyer party (when through a buyer/agent)
+  is_through_buyer?: boolean; // false = direct supply, true = through buyer
   date: string;
   status: InvoiceStatus;
   payment_status: PaymentStatus;
   sale_type: SaleType;
+  
+  // Transport & Delivery metadata matching the exact tax invoice template
+  delivery_note?: string;
+  supplier_ref?: string;
+  other_references?: string;
+  buyer_order_no?: string;
+  buyer_order_date?: string;
+  despatch_doc_no?: string;
+  delivery_note_date?: string;
+  despatched_through?: string;
+  destination?: string;
+  terms_of_delivery?: string; // e.g. "PLACE OF SUPPLY DELHI"
+  place_of_supply?: string;
+
   taxable_amount: number;
   cgst: number;
   sgst: number;
   igst: number;
+  round_off?: number; // e.g. -0.40
   total: number;
   paid_amount: number;
   pdf_url?: string;
   created_by: string;
   created_at: string;
-  party?: Party;
+  party?: Party; // Consignee
+  buyer?: Party; // Buyer (if different)
   items?: InvoiceItem[];
+
+  // Bank details snapshot (optional override)
+  bank_name?: string;
+  bank_account_no?: string;
+  bank_branch_ifsc?: string;
 }
 
 export interface InvoiceItem {
@@ -171,7 +231,9 @@ export interface InvoiceItem {
   description: string;
   hsn_code: string;
   qty: number;
+  unit_symbol?: string; // e.g. "PCS"
   price: number;
+  discount_percent?: number; // e.g. 3 %
   gst_percent: number;
   taxable_value: number;
   cgst: number;

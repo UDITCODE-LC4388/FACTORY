@@ -17,10 +17,19 @@ import {
   X,
   Trash2,
   Printer,
+  Plus,
+  Edit,
+  Truck,
+  Building,
+  UserCheck,
+  Upload,
 } from 'lucide-react';
 import { Invoice } from '@/types/database.types';
 import { WhatsAppModal } from '@/components/common/whatsapp-modal';
 import { WhatsAppTemplates } from '@/lib/whatsapp';
+import { TaxInvoiceTemplate } from '@/components/billing/tax-invoice-template';
+import { CreateInvoiceModal } from '@/components/billing/create-invoice-modal';
+import { POUploadModal } from '@/components/billing/po-upload-modal';
 
 export default function InvoicesPage() {
   const {
@@ -34,7 +43,12 @@ export default function InvoicesPage() {
   } = useFactory();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [supplyFilter, setSupplyFilter] = useState<'all' | 'direct' | 'through_buyer'>('all');
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isPOUploadModalOpen, setIsPOUploadModalOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+
   const [whatsAppModalData, setWhatsAppModalData] = useState<{
     phone: string;
     name: string;
@@ -48,16 +62,26 @@ export default function InvoicesPage() {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'bank' | 'cheque'>('upi');
   const [paymentRef, setPaymentRef] = useState('');
 
-  const filteredInvoices = invoices.filter(
-    (inv) =>
+  const filteredInvoices = invoices.filter((inv) => {
+    const matchSearch =
       inv.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.party?.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      inv.party?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      inv.buyer?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      inv.items?.some((it) => it.description.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchSupply =
+      supplyFilter === 'all' ||
+      (supplyFilter === 'through_buyer' && inv.is_through_buyer) ||
+      (supplyFilter === 'direct' && !inv.is_through_buyer);
+
+    return matchSearch && matchSupply;
+  });
 
   const handleDownloadPDF = async (invoice: Invoice) => {
     const party = parties.find((p) => p.id === invoice.party_id) || invoice.party;
+    const buyer = invoice.buyer_party_id ? parties.find((p) => p.id === invoice.buyer_party_id) : invoice.buyer;
     if (!party) return;
-    await generateInvoicePDF(invoice, factory, party);
+    await generateInvoicePDF(invoice, factory, party, buyer);
   };
 
   const handleRecordPayment = (e: React.FormEvent) => {
@@ -86,7 +110,7 @@ export default function InvoicesPage() {
       customerName: partyName,
       invoiceNo: inv.number,
       totalAmount: formatINR(inv.total),
-      factoryName: factory.name || 'Manisha Garments',
+      factoryName: factory.name || 'MANISHA GARMENTS',
       date: inv.date,
       paymentStatus: inv.payment_status,
     });
@@ -99,6 +123,7 @@ export default function InvoicesPage() {
     });
   };
 
+  const canEdit = ['owner', 'master', 'accountant'].includes(currentProfile.role);
   const canRecordPayment = ['owner', 'master', 'accountant'].includes(currentProfile.role);
 
   return (
@@ -108,24 +133,69 @@ export default function InvoicesPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             <CreditCard className="h-6 w-6 text-blue-400" />
-            GST Tax Invoices & Receivables
+            GST Tax Invoices & Billing
           </h1>
           <p className="text-xs sm:text-sm text-slate-400">
-            Compliant B2B / B2C tax invoices, automatic CGST/SGST/IGST calculation & receipt ledger
+            Compliant B2B / B2C tax invoices, Direct & Buyer supply modes, and seamless printable templates
           </p>
         </div>
+
+        {canEdit && (
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button
+              onClick={() => setIsPOUploadModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition"
+            >
+              <Upload className="h-4 w-4" />
+              <span>Upload PO & Bill (PDF / Image)</span>
+            </button>
+            <button
+              onClick={() => {
+                setEditingInvoice(null);
+                setIsCreateModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-2 shadow-sm transition"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Manual Bill</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search by Invoice # or Customer name..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      {/* Filter & Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search by Invoice #, Consignee, Buyer or Item..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Supply Filter */}
+        <div className="flex gap-2">
+          {[
+            { id: 'all', label: 'All Bills' },
+            { id: 'direct', label: 'Direct Supply' },
+            { id: 'through_buyer', label: 'Through Buyer' },
+          ].map((sf) => (
+            <button
+              key={sf.id}
+              onClick={() => setSupplyFilter(sf.id as any)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                supplyFilter === sf.id
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              {sf.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Invoices Table */}
@@ -134,11 +204,11 @@ export default function InvoicesPage() {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-850/50 text-slate-400 font-semibold">
-                <th className="py-3 px-4">Invoice #</th>
-                <th className="py-3 px-4">Date</th>
-                <th className="py-3 px-4">Customer</th>
+                <th className="py-3 px-4">Invoice # & Date</th>
+                <th className="py-3 px-4">Supply Mode</th>
+                <th className="py-3 px-4">Consignee & Buyer</th>
                 <th className="py-3 px-4">Taxable</th>
-                <th className="py-3 px-4">GST</th>
+                <th className="py-3 px-4">GST Tax</th>
                 <th className="py-3 px-4">Total Amount</th>
                 <th className="py-3 px-4">Payment</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -148,31 +218,59 @@ export default function InvoicesPage() {
               {filteredInvoices.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-500 text-xs">
-                    No tax invoices generated yet. Convert orders from &ldquo;Sale Orders&rdquo; tab to create invoices.
+                    No tax invoices found. Click &ldquo;Create Tax Invoice&rdquo; or convert orders to create invoices.
                   </td>
                 </tr>
               ) : (
                 filteredInvoices.map((inv) => {
                   const party = parties.find((p) => p.id === inv.party_id) || inv.party;
+                  const buyer = inv.buyer_party_id ? parties.find((p) => p.id === inv.buyer_party_id) : inv.buyer;
+                  const isThroughBuyer = inv.is_through_buyer;
+
                   return (
                     <tr key={inv.id} className="hover:bg-slate-800/40 transition">
                       <td className="py-3.5 px-4 font-mono font-bold text-blue-400">
-                        {inv.number}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-300 font-mono">
-                        {inv.date}
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-white">
-                        <div>
-                          <span>{party?.name || 'Customer'}</span>
-                          <p className="text-[11px] text-slate-400 font-normal">
-                            {party?.state} (GST: {party?.gstin || 'None'})
-                          </p>
+                        <div className="flex flex-col">
+                          <span>{inv.number}</span>
+                          <span className="text-[11px] text-slate-400 font-normal">{inv.date}</span>
                         </div>
                       </td>
+
+                      <td className="py-3.5 px-4">
+                        {isThroughBuyer ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                            <Building className="h-3 w-3" />
+                            Through Buyer
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            <UserCheck className="h-3 w-3" />
+                            Direct Supply
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4 font-semibold text-white">
+                        <div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase">Ship:</span>
+                            <span>{party?.name || 'Consignee'}</span>
+                            <span className="text-[10.5px] font-mono text-slate-400 font-normal">({party?.state})</span>
+                          </div>
+                          {isThroughBuyer && buyer && (
+                            <div className="flex items-center gap-1 text-[11px] text-purple-300 font-normal mt-0.5">
+                              <span className="text-[10px] text-purple-400 font-bold uppercase">Bill:</span>
+                              <span>{buyer.name}</span>
+                              <span className="text-[10.5px] font-mono text-slate-400 font-normal">({buyer.state})</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
                       <td className="py-3.5 px-4 font-mono text-slate-300">
                         {formatINR(inv.taxable_amount)}
                       </td>
+
                       <td className="py-3.5 px-4">
                         {inv.cgst > 0 || inv.sgst > 0 ? (
                           <div className="flex flex-col text-[10px] font-mono text-slate-400">
@@ -180,14 +278,16 @@ export default function InvoicesPage() {
                             <span>SGST: {formatINR(inv.sgst)}</span>
                           </div>
                         ) : (
-                          <span className="text-[11px] font-mono text-cyan-400">
+                          <span className="text-[11px] font-mono text-cyan-400 font-bold">
                             IGST: {formatINR(inv.igst)}
                           </span>
                         )}
                       </td>
+
                       <td className="py-3.5 px-4 font-extrabold text-emerald-400 text-sm">
                         {formatINR(inv.total)}
                       </td>
+
                       <td className="py-3.5 px-4">
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
@@ -206,18 +306,35 @@ export default function InvoicesPage() {
                           </p>
                         )}
                       </td>
+
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
-                            onClick={() => {
-                              handleDownloadPDF(inv);
-                              setPreviewInvoice(inv);
-                            }}
+                            onClick={() => setPreviewInvoice(inv)}
                             className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 transition"
-                            title="Print / Download Tax Invoice PDF"
+                            title="Print / Preview Tax Invoice (Exact Template)"
                           >
                             <Printer className="h-3.5 w-3.5" />
                           </button>
+                          <button
+                            onClick={() => handleDownloadPDF(inv)}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                            title="Download Vector PDF"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => {
+                                setEditingInvoice(inv);
+                                setIsCreateModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-amber-400 border border-slate-700 transition"
+                              title="Edit Tax Invoice"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           {canRecordPayment && inv.payment_status !== 'paid' && (
                             <button
                               onClick={() => {
@@ -234,18 +351,14 @@ export default function InvoicesPage() {
                           <button
                             onClick={() => handleOpenWhatsAppModal(inv)}
                             className="p-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 transition"
-                            title="Send WhatsApp Invoice Copy (1-Click or Meta Cloud)"
+                            title="Send WhatsApp Invoice Copy"
                           >
                             <MessageSquare className="h-3.5 w-3.5" />
                           </button>
                           <button
-                            onClick={() => {
-                              if (confirm(`Cancel/Delete Invoice ${inv.number}? This will reverse customer balance and restore stock quantities in ledger.`)) {
-                                deleteInvoice(inv.id);
-                              }
-                            }}
+                            onClick={() => deleteInvoice(inv.id)}
                             className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 transition"
-                            title="Delete / Cancel Invoice (Restores Stock & Balance)"
+                            title="Delete Tax Invoice"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -260,7 +373,24 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Modal 1: Payment Recording */}
+      {/* Modal 1: Create / Edit Advanced Tax Invoice Modal */}
+      {isCreateModalOpen && (
+        <CreateInvoiceModal
+          isOpen={isCreateModalOpen}
+          onClose={() => {
+            setIsCreateModalOpen(false);
+            setEditingInvoice(null);
+          }}
+          editInvoice={editingInvoice}
+          onSuccess={(createdInv, shouldPrint) => {
+            if (shouldPrint) {
+              setPreviewInvoice(createdInv);
+            }
+          }}
+        />
+      )}
+
+      {/* Modal 2: Payment Recording */}
       {paymentModalInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
@@ -342,161 +472,77 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Modal 2: Invoice Print Preview */}
+      {/* Modal 3: Exact Tax Invoice Print Preview */}
       {previewInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-3xl max-h-[95vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/80">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-4xl max-h-[96vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col my-auto">
+            {/* Modal Top Bar */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850/90 print:hidden">
               <div className="flex items-center gap-2">
                 <Printer className="h-5 w-5 text-blue-400" />
                 <h3 className="text-sm font-bold text-white">
-                  Tax Invoice Preview — {previewInvoice.number}
+                  Tax Invoice — {previewInvoice.number} ({previewInvoice.is_through_buyer ? 'Through Buyer' : 'Direct Supply'})
                 </h3>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => window.print()}
-                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
                 >
-                  <Printer className="h-3.5 w-3.5" />
-                  <span>Print (System)</span>
+                  <Printer className="h-4 w-4" />
+                  <span>Print Document</span>
                 </button>
                 <button
                   onClick={() => handleDownloadPDF(previewInvoice)}
-                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition"
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-4 w-4" />
                   <span>Download PDF</span>
                 </button>
                 <button
                   onClick={() => setPreviewInvoice(null)}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-white"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
 
-            {/* Printable Invoice White Paper */}
-            <div className="p-6 overflow-y-auto bg-slate-950 flex justify-center">
-              <div className="w-full max-w-2xl bg-white text-slate-900 p-8 rounded-xl shadow-2xl space-y-6 text-xs border border-slate-300 font-sans">
-                {/* Header */}
-                <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-start">
-                  <div>
-                    <h2 className="text-xl font-extrabold tracking-tight text-slate-900">
-                      {factory.name || 'Manisha Garments'}
-                    </h2>
-                    <p className="text-[11px] text-slate-600 mt-0.5">{factory.address || 'Industrial Area Unit'}</p>
-                    <p className="text-[11px] text-slate-600">
-                      GSTIN: <strong>{factory.gstin || '27AAAAA0000A1Z5'}</strong> &bull; State: {factory.state} ({factory.state_code})
-                    </p>
-                    <p className="text-[11px] text-slate-600">Phone: {factory.phone || '+91 98000 00000'}</p>
-                  </div>
-
-                  <div className="text-right bg-slate-100 p-3 rounded-lg border border-slate-300">
-                    <span className="font-extrabold text-slate-900 text-sm block">TAX INVOICE</span>
-                    <p className="font-mono font-bold text-slate-800 mt-1">Invoice: {previewInvoice.number}</p>
-                    <p className="text-slate-600">Date: {previewInvoice.date}</p>
-                    <p className="text-slate-600 uppercase font-semibold">
-                      Payment: {previewInvoice.payment_status}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Customer Block */}
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <span className="font-bold text-slate-900 block text-[11px] uppercase tracking-wider mb-1">
-                    Billed To (Customer):
-                  </span>
-                  <p className="font-bold text-sm text-slate-900">{previewInvoice.party?.name || 'Customer Name'}</p>
-                  <p className="text-slate-600">{previewInvoice.party?.address || 'Address on file'}</p>
-                  <p className="text-slate-600">
-                    GSTIN: {previewInvoice.party?.gstin || 'UNREGISTERED'} &bull; State: {previewInvoice.party?.state} ({previewInvoice.party?.state_code})
-                  </p>
-                </div>
-
-                {/* Line Items Table */}
-                <div>
-                  <table className="w-full border-collapse border border-slate-300 text-xs">
-                    <thead>
-                      <tr className="bg-slate-900 text-white font-bold">
-                        <th className="border border-slate-300 p-2 text-left">#</th>
-                        <th className="border border-slate-300 p-2 text-left">Description</th>
-                        <th className="border border-slate-300 p-2 text-left">HSN</th>
-                        <th className="border border-slate-300 p-2 text-right">Qty</th>
-                        <th className="border border-slate-300 p-2 text-right">Rate</th>
-                        <th className="border border-slate-300 p-2 text-right">Taxable</th>
-                        <th className="border border-slate-300 p-2 text-center">GST</th>
-                        <th className="border border-slate-300 p-2 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(previewInvoice.items || []).map((it, idx) => (
-                        <tr key={it.id} className="border-b border-slate-300">
-                          <td className="border border-slate-300 p-2">{idx + 1}</td>
-                          <td className="border border-slate-300 p-2 font-bold">{it.description}</td>
-                          <td className="border border-slate-300 p-2 font-mono">{it.hsn_code}</td>
-                          <td className="border border-slate-300 p-2 text-right font-bold">{it.qty}</td>
-                          <td className="border border-slate-300 p-2 text-right">{formatINR(it.price)}</td>
-                          <td className="border border-slate-300 p-2 text-right">{formatINR(it.taxable_value)}</td>
-                          <td className="border border-slate-300 p-2 text-center">{it.gst_percent}%</td>
-                          <td className="border border-slate-300 p-2 text-right font-bold">{formatINR(it.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Total Summary */}
-                <div className="flex justify-end">
-                  <div className="w-64 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5 text-xs">
-                    <div className="flex justify-between text-slate-600">
-                      <span>Taxable Amount:</span>
-                      <span>{formatINR(previewInvoice.taxable_amount)}</span>
-                    </div>
-                    {previewInvoice.cgst > 0 && (
-                      <div className="flex justify-between text-slate-600">
-                        <span>CGST:</span>
-                        <span>{formatINR(previewInvoice.cgst)}</span>
-                      </div>
-                    )}
-                    {previewInvoice.sgst > 0 && (
-                      <div className="flex justify-between text-slate-600">
-                        <span>SGST:</span>
-                        <span>{formatINR(previewInvoice.sgst)}</span>
-                      </div>
-                    )}
-                    {previewInvoice.igst > 0 && (
-                      <div className="flex justify-between text-slate-600">
-                        <span>IGST:</span>
-                        <span>{formatINR(previewInvoice.igst)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t border-slate-300 pt-1.5">
-                      <span>Grand Total:</span>
-                      <span>{formatINR(previewInvoice.total)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Authorised Signatory */}
-                <div className="pt-8 flex justify-between items-end text-slate-800 text-[11px]">
-                  <div className="text-slate-500 text-[10px]">
-                    Thank you for your business. Terms apply.
-                  </div>
-                  <div className="text-center font-bold">
-                    <div className="w-48 border-t border-slate-400 pt-1">For {factory.name || 'Company'}</div>
-                    <span className="text-[10px] text-slate-500 font-normal">Authorised Signatory</span>
-                  </div>
-                </div>
-              </div>
+            {/* Exact Paper Invoice Preview Content */}
+            <div className="p-4 sm:p-8 overflow-y-auto bg-neutral-900 flex justify-center print:p-0 print:bg-white">
+              {(() => {
+                const party = parties.find((p) => p.id === previewInvoice.party_id) || previewInvoice.party || parties[0];
+                const buyer = previewInvoice.buyer_party_id ? (parties.find((p) => p.id === previewInvoice.buyer_party_id) || previewInvoice.buyer) : undefined;
+                return (
+                  <TaxInvoiceTemplate
+                    invoice={previewInvoice}
+                    factory={factory}
+                    party={party}
+                    buyer={buyer}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal 3: WhatsApp Dispatcher */}
+      {/* Modal 4: PO Document (PDF / Image) Upload & Instant Billing Modal */}
+      {isPOUploadModalOpen && (
+        <POUploadModal
+          isOpen={isPOUploadModalOpen}
+          onClose={() => setIsPOUploadModalOpen(false)}
+          onSuccess={(createdInv, shouldPrint) => {
+            setIsPOUploadModalOpen(false);
+            if (shouldPrint) {
+              setPreviewInvoice(createdInv);
+            }
+          }}
+        />
+      )}
+
+      {/* Modal 5: WhatsApp Dispatcher */}
       {whatsAppModalData && (
         <WhatsAppModal
           isOpen={!!whatsAppModalData}

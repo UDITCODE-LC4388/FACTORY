@@ -85,3 +85,31 @@
 .mic-active {
   animation: mic-pulse 1.6s infinite;
 }
+
+/* Seamless Print Styles for Tax Invoices & Challans */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  header, nav, aside, footer, .print\:hidden {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #tax-invoice-printable {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: 1px solid black !important;
+    page-break-inside: avoid !important;
+  }
+}

@@ -9,7 +9,7 @@ import {
   RoadChallan,
   JobWorker,
 } from '@/types/database.types';
-import { formatINR } from './gst';
+import { formatINR, formatIndianNumber, numberToIndianWords } from './gst';
 import QRCode from 'qrcode';
 
 /**
@@ -278,10 +278,14 @@ export async function generateRoadChallanPDF(
 /**
  * 2. GST Tax Invoice PDF Generator
  */
+/**
+ * 2. GST Tax Invoice PDF Generator (Exact Sample Template Matching)
+ */
 export async function generateInvoicePDF(
   invoice: Invoice,
   factory: Factory,
-  party: Party
+  party: Party,
+  buyerParty?: Party
 ): Promise<void> {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -289,142 +293,393 @@ export async function generateInvoicePDF(
     format: 'a4',
   });
 
-  // Header Banner
-  doc.setFillColor(30, 41, 59); // Slate-800
-  doc.rect(0, 0, 210, 28, 'F');
+  const consignee = party;
+  const buyer = (invoice.is_through_buyer && (buyerParty || invoice.buyer))
+    ? (buyerParty || invoice.buyer!)
+    : party;
 
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18);
+  const isInterstate = invoice.igst > 0 || (
+    factory.state_code.trim() !== (buyer.state_code || consignee.state_code).trim() &&
+    Boolean(buyer.state_code || consignee.state_code)
+  );
+
+  const startX = 14;
+  const pageWidth = 182; // 210 - 28
+
+  // Outer Border Box
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.3);
+
+  // Top Title
   doc.setFont('helvetica', 'bold');
-  doc.text('TAX INVOICE', 14, 18);
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Tax Invoice', 105, 14, { align: 'center' });
 
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`ORIGINAL FOR RECIPIENT`, 150, 18);
+  let curY = 17;
 
-  // Factory (Seller) Details
-  doc.setTextColor(30, 41, 59);
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text(factory.name || 'FactoryOS', 14, 38);
+  // Header Box (Seller on Left, Metadata on Right)
+  const headerHeight = 44;
+  doc.rect(startX, curY, pageWidth, headerHeight);
+  doc.line(startX + 91, curY, startX + 91, curY + headerHeight); // Mid divider
 
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  doc.text(factory.address || '', 14, 44);
-  doc.text(`GSTIN: ${factory.gstin} | State: ${factory.state} (${factory.state_code})`, 14, 50);
-  doc.text(`Phone: ${factory.phone}`, 14, 56);
-
-  // Invoice Meta Box
-  doc.setFillColor(248, 250, 252);
-  doc.rect(130, 32, 66, 26, 'F');
-  doc.setDrawColor(226, 232, 240);
-  doc.rect(130, 32, 66, 26, 'D');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 41, 59);
-  doc.text(`Invoice No: ${invoice.number}`, 134, 38);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Date: ${invoice.date}`, 134, 44);
-  doc.text(`Sale Type: ${invoice.sale_type.toUpperCase()}`, 134, 50);
-  doc.text(`Payment: ${invoice.payment_status.toUpperCase()}`, 134, 55);
-
-  // Bill To (Party / Customer Details)
-  doc.setDrawColor(226, 232, 240);
-  doc.line(14, 62, 196, 62);
+  // Seller Details (Left)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.setTextColor(30, 41, 59);
-  doc.text('Billed To (Customer):', 14, 68);
+  doc.text(factory.name || 'MANISHA GARMENTS', startX + 2, curY + 5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(51, 65, 85);
-  doc.text(party.name, 14, 74);
-  doc.text(party.address || 'Address on file', 14, 79);
-  doc.text(`GSTIN: ${party.gstin || 'UNREGISTERED'} | State: ${party.state} (${party.state_code})`, 14, 84);
+  doc.setFontSize(7.5);
+  const addrLines = (factory.address || 'NA,34-35/2/1 SITA RAM SUPER MARKET\nSRI AUROBINDRA ROAD ,SALKIA\nHOWRAH-711106').split('\n');
+  let sY = curY + 9;
+  addrLines.forEach((al) => {
+    doc.text(al, startX + 2, sY);
+    sY += 3.5;
+  });
 
-  // Line Items Table
-  const tableData = (invoice.items || []).map((item, idx) => [
-    idx + 1,
-    item.description,
-    item.hsn_code,
-    `${item.qty}`,
-    formatINR(item.price),
-    formatINR(item.taxable_value),
-    `${item.gst_percent}%`,
-    formatINR(item.cgst + item.sgst + item.igst),
-    formatINR(item.total),
-  ]);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`GSTIN/UIN: ${factory.gstin || '19AGGPB3696R1ZM'}`, startX + 2, sY + 1);
+  doc.text(`State Name : ${factory.state || 'West Bengal'}, Code : ${factory.state_code || '19'}`, startX + 2, sY + 5);
+
+  // Metadata Grid (Right)
+  const metaX = startX + 91;
+  const colW = 45.5;
+  const rH = 5.5;
+
+  // Row 1: Invoice No | Dated
+  doc.line(metaX, curY + rH, startX + pageWidth, curY + rH);
+  doc.line(metaX + colW, curY, metaX + colW, curY + (rH * 6));
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Invoice No.', metaX + 2, curY + 2.5);
+  doc.text('Dated', metaX + colW + 2, curY + 2.5);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(invoice.number, metaX + 2, curY + 5);
+  doc.text(invoice.date, metaX + colW + 2, curY + 5);
+
+  // Row 2: Delivery Note | Mode/Terms of Payment
+  doc.line(metaX, curY + (rH * 2), startX + pageWidth, curY + (rH * 2));
+  doc.setFontSize(6.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 100, 100);
+  doc.text('Delivery Note', metaX + 2, curY + rH + 2.5);
+  doc.text('Mode/Terms of Payment', metaX + colW + 2, curY + rH + 2.5);
+  doc.setFontSize(7.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text(invoice.delivery_note || '', metaX + 2, curY + rH + 5);
+  doc.text(invoice.sale_type ? invoice.sale_type.toUpperCase() : 'CREDIT', metaX + colW + 2, curY + rH + 5);
+
+  // Row 3: Supplier's Ref | Other Reference(s)
+  doc.line(metaX, curY + (rH * 3), startX + pageWidth, curY + (rH * 3));
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text("Supplier's Ref.", metaX + 2, curY + (rH * 2) + 2.5);
+  doc.text('Other Reference(s)', metaX + colW + 2, curY + (rH * 2) + 2.5);
+  doc.setFontSize(7.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text(invoice.supplier_ref || invoice.number, metaX + 2, curY + (rH * 2) + 5);
+  doc.text(invoice.other_references || '', metaX + colW + 2, curY + (rH * 2) + 5);
+
+  // Row 4: Buyer's Order No | Dated
+  doc.line(metaX, curY + (rH * 4), startX + pageWidth, curY + (rH * 4));
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text("Buyer's Order No.", metaX + 2, curY + (rH * 3) + 2.5);
+  doc.text('Dated', metaX + colW + 2, curY + (rH * 3) + 2.5);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(invoice.buyer_order_no || '', metaX + 2, curY + (rH * 3) + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(invoice.buyer_order_date || '', metaX + colW + 2, curY + (rH * 3) + 5);
+
+  // Row 5: Despatch Doc No | Delivery Note Date
+  doc.line(metaX, curY + (rH * 5), startX + pageWidth, curY + (rH * 5));
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Despatch Document No.', metaX + 2, curY + (rH * 4) + 2.5);
+  doc.text('Delivery Note Date', metaX + colW + 2, curY + (rH * 4) + 2.5);
+  doc.setFontSize(7.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text(invoice.despatch_doc_no || '', metaX + 2, curY + (rH * 4) + 5);
+  doc.text(invoice.delivery_note_date || '', metaX + colW + 2, curY + (rH * 4) + 5);
+
+  // Row 6: Despatched through | Destination
+  doc.line(metaX, curY + (rH * 6), startX + pageWidth, curY + (rH * 6));
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Despatched through', metaX + 2, curY + (rH * 5) + 2.5);
+  doc.text('Destination', metaX + colW + 2, curY + (rH * 5) + 2.5);
+  doc.setFontSize(7.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text(invoice.despatched_through || '', metaX + 2, curY + (rH * 5) + 5);
+  doc.text(invoice.destination || consignee.state || '', metaX + colW + 2, curY + (rH * 5) + 5);
+
+  // Row 7: Terms of Delivery
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Terms of Delivery', metaX + 2, curY + (rH * 6) + 2.5);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  const terms = invoice.terms_of_delivery || (isInterstate ? `PLACE OF SUPPLY\n${buyer.state?.toUpperCase() || ''}` : '');
+  const tLines = terms.split('\n');
+  tLines.forEach((tl, tidx) => {
+    doc.text(tl, metaX + 2, curY + (rH * 6) + 5.5 + (tidx * 3.5));
+  });
+
+  curY += headerHeight;
+
+  // Consignee & Buyer Boxes
+  const partyBoxHeight = 32;
+  doc.rect(startX, curY, pageWidth, partyBoxHeight);
+  doc.line(startX + 91, curY, startX + 91, curY + partyBoxHeight);
+
+  // Consignee (Left)
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Consignee', startX + 2, curY + 3);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(consignee.name, startX + 2, curY + 6.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  const cAddr = (consignee.address || 'Address on file').split('\n');
+  let cY = curY + 10;
+  cAddr.slice(0, 4).forEach((cal) => {
+    doc.text(cal, startX + 2, cY);
+    cY += 3;
+  });
+  doc.setFont('helvetica', 'bold');
+  doc.text(`GSTIN/UIN : ${consignee.gstin || 'UNREGISTERED'}`, startX + 2, curY + 26);
+  doc.text(`State Name : ${consignee.state}, Code : ${consignee.state_code}`, startX + 2, curY + 29.5);
+
+  // Buyer (Right)
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Buyer (if other than consignee)', metaX + 2, curY + 3);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(buyer.name, metaX + 2, curY + 6.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  const bAddr = (buyer.address || consignee.address || 'Address on file').split('\n');
+  let bY = curY + 10;
+  bAddr.slice(0, 4).forEach((bal) => {
+    doc.text(bal, metaX + 2, bY);
+    bY += 3;
+  });
+  doc.setFont('helvetica', 'bold');
+  doc.text(`GSTIN/UIN : ${buyer.gstin || consignee.gstin || 'UNREGISTERED'}`, metaX + 2, curY + 26);
+  doc.text(`State Name : ${buyer.state || consignee.state}, Code : ${buyer.state_code || consignee.state_code}`, metaX + 2, curY + 29.5);
+
+  curY += partyBoxHeight;
+
+  // Table Body Rows
+  const totalQty = (invoice.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+  const unitSymbol = invoice.items?.[0]?.unit_symbol || 'PCS';
+
+  const tableRows: Array<Array<string>> = [];
+
+  (invoice.items || []).forEach((it, idx) => {
+    tableRows.push([
+      String(idx + 1),
+      it.description,
+      it.hsn_code || '610990',
+      `${formatIndianNumber(it.qty, 3)} ${it.unit_symbol || 'PCS'}`,
+      formatIndianNumber(it.price, 2),
+      it.unit_symbol || 'PCS',
+      it.discount_percent && it.discount_percent > 0 ? `${it.discount_percent} %` : '',
+      formatIndianNumber(it.taxable_value, 2),
+    ]);
+  });
+
+  // Sub-lines for Taxes inside the table
+  if (isInterstate) {
+    tableRows.push(['', 'OUTPUT IGST 5%', '', '', '5 %', '', '', formatIndianNumber(invoice.igst, 2)]);
+  } else {
+    tableRows.push(['', 'OUTPUT CGST 2.5%', '', '', '2.50 %', '', '', formatIndianNumber(invoice.cgst, 2)]);
+    tableRows.push(['', 'OUTPUT SGST 2.5%', '', '', '2.50 %', '', '', formatIndianNumber(invoice.sgst, 2)]);
+  }
+
+  if (typeof invoice.round_off === 'number' && invoice.round_off !== 0) {
+    tableRows.push(['', 'Less : R/OFF', '', '', '', '', '', invoice.round_off < 0 ? `(-)${Math.abs(invoice.round_off).toFixed(2)}` : `(+)${invoice.round_off.toFixed(2)}`]);
+  }
 
   autoTable(doc, {
-    startY: 90,
-    head: [['#', 'Description', 'HSN/SAC', 'Qty', 'Rate', 'Taxable', 'GST %', 'Tax Amt', 'Total']],
-    body: tableData,
-    theme: 'grid',
+    startY: curY,
+    margin: { left: startX, right: 14 },
+    tableWidth: pageWidth,
+    head: [['Sl\nNo.', 'Description of Goods', 'HSN/SAC', 'Quantity', 'Rate', 'per', 'Disc. %', 'Amount']],
+    body: tableRows,
+    foot: [['', 'Total', '', `${formatIndianNumber(totalQty, 3)} ${unitSymbol}`, '', '', '', `INR ${formatIndianNumber(invoice.total, 2)}`]],
+    theme: 'plain',
+    tableLineColor: [0, 0, 0],
+    tableLineWidth: 0.3,
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 1.5,
+      textColor: [0, 0, 0],
+      lineColor: [0, 0, 0],
+      lineWidth: 0.2,
+    },
     headStyles: {
-      fillColor: [30, 41, 59],
-      textColor: 255,
-      fontSize: 8,
+      fillColor: [255, 255, 255],
+      textColor: [0, 0, 0],
+      fontStyle: 'bold',
+      halign: 'center',
+      valign: 'middle',
+    },
+    footStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [0, 0, 0],
       fontStyle: 'bold',
     },
-    bodyStyles: {
-      fontSize: 8,
-      textColor: [51, 65, 85],
-    },
     columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 55 },
-      2: { cellWidth: 20 },
-      3: { cellWidth: 15, halign: 'right' },
-      4: { cellWidth: 20, halign: 'right' },
-      5: { cellWidth: 20, halign: 'right' },
-      6: { cellWidth: 15, halign: 'center' },
-      7: { cellWidth: 20, halign: 'right' },
-      8: { cellWidth: 21, halign: 'right' },
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 60, halign: 'left' },
+      2: { cellWidth: 20, halign: 'center' },
+      3: { cellWidth: 24, halign: 'right' },
+      4: { cellWidth: 18, halign: 'right' },
+      5: { cellWidth: 12, halign: 'center' },
+      6: { cellWidth: 14, halign: 'center' },
+      7: { cellWidth: 26, halign: 'right' },
     },
   });
 
-  const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 10 : 180;
+  curY = (doc as any).lastAutoTable.finalY;
 
-  // Tax Summary Box
-  doc.setFillColor(248, 250, 252);
-  doc.rect(120, finalY, 76, 45, 'F');
-  doc.setDrawColor(226, 232, 240);
-  doc.rect(120, finalY, 76, 45, 'D');
-
-  doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105);
-  doc.text('Taxable Amount:', 124, finalY + 8);
-  doc.text(formatINR(invoice.taxable_amount), 192, finalY + 8, { align: 'right' });
-
-  if (invoice.cgst > 0 || invoice.sgst > 0) {
-    doc.text('CGST:', 124, finalY + 15);
-    doc.text(formatINR(invoice.cgst), 192, finalY + 15, { align: 'right' });
-    doc.text('SGST:', 124, finalY + 22);
-    doc.text(formatINR(invoice.sgst), 192, finalY + 22, { align: 'right' });
-  } else {
-    doc.text('IGST (Interstate):', 124, finalY + 15);
-    doc.text(formatINR(invoice.igst), 192, finalY + 15, { align: 'right' });
-  }
-
-  doc.setDrawColor(203, 213, 225);
-  doc.line(124, finalY + 28, 192, finalY + 28);
-
+  // Amount Chargeable in Words Box
+  doc.rect(startX, curY, pageWidth, 8);
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Amount Chargeable (in words)', startX + 2, curY + 2.5);
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  doc.text('Grand Total:', 124, finalY + 36);
-  doc.text(formatINR(invoice.total), 192, finalY + 36, { align: 'right' });
+  doc.setTextColor(0, 0, 0);
+  doc.text(numberToIndianWords(invoice.total), startX + 2, curY + 5.5);
+  doc.text('E. & O.E', startX + pageWidth - 14, curY + 5.5);
 
-  // Bank & Footer Notes
-  doc.setFontSize(8);
+  curY += 8;
+
+  // HSN Tax Breakdown Table
+  const totalTaxAmount = invoice.cgst + invoice.sgst + invoice.igst;
+  const hsnHead = isInterstate
+    ? [['HSN/SAC', 'Taxable Value', 'Integrated Tax Rate', 'Integrated Tax Amount', 'Total Tax Amount']]
+    : [['HSN/SAC', 'Taxable Value', 'Central Tax Rate', 'Central Tax Amount', 'State Tax Rate', 'State Tax Amount', 'Total Tax Amount']];
+
+  const hsnBody = (invoice.items || []).map((it) => {
+    if (isInterstate) {
+      return [
+        it.hsn_code || '610990',
+        formatIndianNumber(it.taxable_value, 2),
+        '5%',
+        formatIndianNumber(it.igst, 2),
+        formatIndianNumber(it.igst, 2),
+      ];
+    } else {
+      return [
+        it.hsn_code || '610990',
+        formatIndianNumber(it.taxable_value, 2),
+        '2.50%',
+        formatIndianNumber(it.cgst, 2),
+        '2.50%',
+        formatIndianNumber(it.sgst, 2),
+        formatIndianNumber(it.cgst + it.sgst, 2),
+      ];
+    }
+  });
+
+  const hsnFoot = isInterstate
+    ? [['Total', formatIndianNumber(invoice.taxable_amount, 2), '', formatIndianNumber(invoice.igst, 2), formatIndianNumber(invoice.igst, 2)]]
+    : [['Total', formatIndianNumber(invoice.taxable_amount, 2), '', formatIndianNumber(invoice.cgst, 2), '', formatIndianNumber(invoice.sgst, 2), formatIndianNumber(totalTaxAmount, 2)]];
+
+  autoTable(doc, {
+    startY: curY,
+    margin: { left: startX, right: 14 },
+    tableWidth: pageWidth,
+    head: hsnHead,
+    body: hsnBody,
+    foot: hsnFoot,
+    theme: 'plain',
+    tableLineColor: [0, 0, 0],
+    tableLineWidth: 0.3,
+    styles: {
+      fontSize: 7,
+      cellPadding: 1,
+      textColor: [0, 0, 0],
+      lineColor: [0, 0, 0],
+      lineWidth: 0.2,
+      halign: 'center',
+    },
+    headStyles: {
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    footStyles: {
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { halign: 'left' },
+      1: { halign: 'right' },
+      3: { halign: 'right' },
+      5: { halign: 'right' },
+      6: { halign: 'right' },
+    },
+  });
+
+  curY = (doc as any).lastAutoTable.finalY;
+
+  // Tax Amount in Words Box
+  doc.rect(startX, curY, pageWidth, 5.5);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Tax Amount (in words) :  ${numberToIndianWords(totalTaxAmount)}`, startX + 2, curY + 3.8);
+
+  curY += 5.5;
+
+  // Footer: PAN, Declaration, Bank Details (Left) & Signatory (Right)
+  const footerHeight = 28;
+  doc.rect(startX, curY, pageWidth, footerHeight);
+  doc.line(startX + 105, curY, startX + 105, curY + footerHeight);
+
+  // Left Footer
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Company's PAN : ${factory.pan || 'AGGPB3696R'}`, startX + 2, curY + 4);
+
+  doc.setFontSize(6.5);
+  doc.text('Declaration', startX + 2, curY + 7.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 116, 139);
-  doc.text('Terms: Payment due within specified period. Subject to local jurisdiction.', 14, finalY + 8);
+  doc.text('We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.', startX + 2, curY + 10.5, { maxWidth: 100 });
 
-  // Authorised Signatory
-  doc.text(`For ${factory.name}`, 140, finalY + 58);
-  doc.text('Authorized Signatory', 140, finalY + 70);
+  // Bank Details
+  doc.setFont('helvetica', 'bold');
+  doc.text("Company's Bank Details", startX + 2, curY + 17);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Bank Name : ${invoice.bank_name || factory.bank_name || 'UNION BANK OF INDIA C/A'}`, startX + 2, curY + 20.5);
+  doc.text(`A/c No. : ${invoice.bank_account_no || factory.bank_account_no || '397001010230872'}`, startX + 2, curY + 23.5);
+  doc.text(`Branch & IFS Code : ${invoice.bank_branch_ifsc || factory.bank_branch_ifsc || 'M.G.ROAD KOLKTA & UBIN0539708'}`, startX + 2, curY + 26.5);
+
+  // Right Footer: Authorised Signatory
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text(`for ${factory.name || 'MANISHA GARMENTS'}`, startX + 108, curY + 5);
+  doc.text('Authorised Signatory', startX + 108, curY + 25);
+
+  curY += footerHeight;
+
+  // Bottom text
+  doc.setFontSize(6.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(120, 120, 120);
+  doc.text('This is a Computer Generated Invoice', 105, curY + 3.5, { align: 'center' });
 
   printOrDownloadPDF(doc, `${invoice.number}.pdf`);
 }
