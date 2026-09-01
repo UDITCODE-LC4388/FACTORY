@@ -94,7 +94,7 @@ export default function StandaloneASNPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // File Upload Handler (PDF or Image)
+  // File Upload Handler (PDF or Image) -> Process with AI / LLM
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -104,44 +104,24 @@ export default function StandaloneASNPage() {
     setUploadedFileName(file.name);
 
     try {
-      const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
-
-      if (isPdf) {
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = new Uint8Array(arrayBuffer);
-        const { extractText } = await import('unpdf');
-        const { text } = await extractText(buffer);
-        const fullText = Array.isArray(text) ? text.join('\n\n') : String(text || '');
-
-        if (fullText.trim().length >= 10) {
-          const parsed = parseBillTextToASN(fullText, factory);
-          setAsnData(parsed);
-          setStatusMessage(
-            `Bill "${file.name}" parsed! Bill #${parsed.vendorBillNo || 'N/A'}, PO #${parsed.poNo || 'N/A'}, Qty: ${parsed.vendorBillQuantity || '0'} PCS, Total: ₹${parsed.vendorBillValue || '0'}`
-          );
-          return;
-        }
-      }
-
-      // OCR route for images or scanned PDFs
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/parse-bill', {
+      const res = await fetch('/api/parse-bill-llm', {
         method: 'POST',
         body: formData,
       });
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Failed to parse bill with OCR engine.');
+        throw new Error(errJson.error || 'Failed to extract bill details with AI.');
       }
 
       const data = await res.json();
       if (data.asnData) {
         setAsnData(data.asnData);
         setStatusMessage(
-          `Bill "${file.name}" parsed! Bill #${data.asnData.vendorBillNo || 'N/A'}, PO #${data.asnData.poNo || 'N/A'}, Qty: ${data.asnData.vendorBillQuantity || '0'} PCS, Total: ₹${data.asnData.vendorBillValue || '0'}`
+          `AI Document Intelligence extracted bill details (${data.extractedBy === 'llm' ? 'LLM Vision Engine' : 'Precision Engine'}): Bill #${data.asnData.vendorBillNo || 'N/A'}, PO #${data.asnData.poNo || 'N/A'}, Qty: ${data.asnData.vendorBillQuantity || '0'} PCS, Total: ₹${data.asnData.vendorBillValue || '0'}`
         );
       } else {
         throw new Error('No structured bill data could be extracted.');
@@ -159,7 +139,7 @@ export default function StandaloneASNPage() {
     const parsed = parseBillTextToASN(SAMPLE_BILL_TEXT, factory);
     setAsnData(parsed);
     setUploadedFileName('sample-tax-invoice-manisha-garments.pdf');
-    setStatusMessage('Sample bill loaded (Invoice GST/MG/201/26-27 -> Primart PO #3472).');
+    setStatusMessage('Loaded Demo Sample Bill for demonstration.');
   };
 
   // Handle Pick from existing invoice
@@ -176,15 +156,33 @@ export default function StandaloneASNPage() {
     }
   };
 
-  // Handle Parse Pasted Text
-  const handleParseText = () => {
+  // Handle Parse Pasted Text with AI / LLM
+  const handleParseText = async () => {
     if (!pastedText.trim()) return;
     setIsProcessing(true);
+    setStatusMessage(null);
     try {
-      const parsed = parseBillTextToASN(pastedText, factory);
-      setAsnData(parsed);
-      setUploadedFileName('Pasted Bill Text');
-      setStatusMessage('Pasted bill text parsed successfully!');
+      const formData = new FormData();
+      formData.append('text', pastedText);
+
+      const res = await fetch('/api/parse-bill-llm', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to parse text with AI.');
+      }
+
+      const data = await res.json();
+      if (data.asnData) {
+        setAsnData(data.asnData);
+        setUploadedFileName('Pasted Bill Text');
+        setStatusMessage(
+          `AI Extracted (${data.extractedBy === 'llm' ? 'LLM Vision Engine' : 'Precision Engine'}): Bill #${data.asnData.vendorBillNo || 'N/A'}, PO #${data.asnData.poNo || 'N/A'}, Qty: ${data.asnData.vendorBillQuantity || '0'}, Total: ₹${data.asnData.vendorBillValue || '0'}`
+        );
+      }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
