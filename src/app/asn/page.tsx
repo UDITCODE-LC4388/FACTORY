@@ -113,62 +113,38 @@ export default function StandaloneASNPage() {
         const { text } = await extractText(buffer);
         const fullText = Array.isArray(text) ? text.join('\n\n') : String(text || '');
 
-        if (!fullText.trim()) {
-          throw new Error('Could not extract text from this PDF. Please ensure it is readable.');
+        if (fullText.trim().length >= 10) {
+          const parsed = parseBillTextToASN(fullText, factory);
+          setAsnData(parsed);
+          setStatusMessage(
+            `Bill "${file.name}" parsed! Bill #${parsed.vendorBillNo || 'N/A'}, PO #${parsed.poNo || 'N/A'}, Qty: ${parsed.vendorBillQuantity || '0'} PCS, Total: ₹${parsed.vendorBillValue || '0'}`
+          );
+          return;
         }
+      }
 
-        const parsed = parseBillTextToASN(fullText, factory);
-        setAsnData(parsed);
-        setStatusMessage(`Bill "${file.name}" parsed! Bill No: ${parsed.vendorBillNo}, PO No: ${parsed.poNo}, Qty: ${parsed.vendorBillQuantity} PCS, Total: ₹${parsed.vendorBillValue}`);
+      // OCR route for images or scanned PDFs
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/parse-bill', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to parse bill with OCR engine.');
+      }
+
+      const data = await res.json();
+      if (data.asnData) {
+        setAsnData(data.asnData);
+        setStatusMessage(
+          `Bill "${file.name}" parsed! Bill #${data.asnData.vendorBillNo || 'N/A'}, PO #${data.asnData.poNo || 'N/A'}, Qty: ${data.asnData.vendorBillQuantity || '0'} PCS, Total: ₹${data.asnData.vendorBillValue || '0'}`
+        );
       } else {
-        // OCR route for images / scans
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('engineMode', 'auto');
-
-        const res = await fetch('/api/parse-po', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!res.ok) {
-          throw new Error('Failed to process image with OCR engine.');
-        }
-
-        const data = await res.json();
-        if (data.orders && data.orders.length > 0) {
-          const ord = data.orders[0];
-          const parsedASN: ASNFormData = {
-            vendorName: factory.name || 'MANISHA GARMENTS',
-            vendorCity: 'KOLKATA',
-            bookingLocation: 'KOLKATA',
-            vendorMobileNo: factory.phone || '9007157204',
-            asnNumber: '',
-            asnDate: ord.orderDate || new Date().toISOString().split('T')[0],
-            dispatchLocation: ord.consigneeAddress || ord.consigneeName || '',
-            poNo: ord.orderNumber || '3472',
-            poDate: ord.orderDate || new Date().toISOString().split('T')[0],
-            vendorBillNo: `GST/MG/${ord.orderNumber}`,
-            vendorBillDate: ord.orderDate || new Date().toISOString().split('T')[0],
-            vendorBillValue: ord.items.reduce((s: number, i: any) => s + (i.price * i.qty), 0),
-            vendorBillQuantity: ord.items.reduce((s: number, i: any) => s + i.qty, 0),
-            transporterName: '',
-            transporterLrNo: '',
-            dateOfLr: '',
-            wayBillNo: '',
-            noOfCartons: '',
-            identificationMark: '',
-            totalWeight: '',
-            expectedLeadTimeDays: '',
-            buyerName: ord.buyerName || ord.consigneeName || 'PRIMART',
-            emailRecipient: 'sdr@primart.co.in',
-            contactPhone: '7777777777',
-          };
-          setAsnData(parsedASN);
-          setStatusMessage(`Bill image "${file.name}" parsed successfully!`);
-        } else {
-          throw new Error('No structured bill data found in image.');
-        }
+        throw new Error('No structured bill data could be extracted.');
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));

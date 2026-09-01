@@ -1,9 +1,23 @@
 import { ASNFormData } from '@/types/asn.types';
 import { Invoice, Factory, Party } from '@/types/database.types';
-import { EMBEDDED_GROQ_API_KEY } from './ai-po-engine';
+
+const INDIAN_CITIES = [
+  'KOLKATA', 'HOWRAH', 'SALKIA', 'HOOGHLY', 'SHRIRAMPUR', 'SERAMPORE',
+  'MUMBAI', 'THANE', 'BHIWANDI', 'PUNE', 'NAGPUR', 'NASHIK',
+  'DELHI', 'NEW DELHI', 'GURUGRAM', 'GURGAON', 'NOIDA', 'GREATER NOIDA', 'FARIDABAD', 'GHAZIABAD',
+  'SURAT', 'AHMEDABAD', 'VADODARA', 'RAJKOT',
+  'JAIPUR', 'JODHPUR', 'BHILWARA', 'KISHANGARH',
+  'TIRUPUR', 'CHENNAI', 'COIMBATORE', 'ERODE', 'SALEM', 'MADURAI',
+  'BENGALURU', 'BANGALORE', 'MYSORE', 'BELGAUM',
+  'HYDERABAD', 'SECUNDERABAD', 'WARANGAL',
+  'LUDHIANA', 'AMRITSAR', 'JALANDHAR',
+  'KANPUR', 'VARANASI', 'LUCKNOW', 'AGRA', 'MEERUT',
+  'INDORE', 'BHOPAL', 'GWALIOR',
+  'PATNA', 'RANCHI', 'GUWAHATI', 'BHUBANESWAR', 'CUTTACK',
+];
 
 /**
- * Formats a Date string into DD/MM/YYYY or DD/M/YY
+ * Formats a Date string into DD/MM/YYYY
  */
 export function formatASNDate(dateStr?: string | null): string {
   if (!dateStr) {
@@ -16,8 +30,8 @@ export function formatASNDate(dateStr?: string | null): string {
 
   const clean = dateStr.trim();
 
-  // If already in DD/MM/YYYY or DD-MM-YYYY format
-  const slashMatch = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  // If already in DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const slashMatch = clean.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
   if (slashMatch) {
     const d = String(slashMatch[1]).padStart(2, '0');
     const m = String(slashMatch[2]).padStart(2, '0');
@@ -26,8 +40,8 @@ export function formatASNDate(dateStr?: string | null): string {
     return `${d}/${m}/${y}`;
   }
 
-  // If in DD-MMM-YYYY format (e.g. 31-Aug-2026 or 10-Jun-2026)
-  const mmmMatch = clean.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,9})[-/\s](\d{2,4})$/i);
+  // If in DD-MMM-YYYY format (e.g. 31-Aug-2026 or 10-Jun-2026 or 31 Aug 2026)
+  const mmmMatch = clean.match(/^(\d{1,2})[-/\s.]([A-Za-z]{3,9})[-/\s.](\d{2,4})$/i);
   if (mmmMatch) {
     const d = String(mmmMatch[1]).padStart(2, '0');
     const monthNames = [
@@ -61,7 +75,7 @@ export function formatASNDate(dateStr?: string | null): string {
       return `${dd}/${mm}/${yyyy}`;
     }
   } catch {
-    // fallback
+    // ignore
   }
 
   return clean;
@@ -75,11 +89,39 @@ export function cleanPONumber(rawPo?: string | null): string {
   return rawPo
     .replace(/^PO\s*(?:NO\.?|NUMBER|#|\:)\s*/i, '')
     .replace(/^ORDER\s*(?:NO\.?|#|\:)\s*/i, '')
+    .replace(/^P\.O\.\s*(?:NO\.?|#|\:)\s*/i, '')
     .trim();
 }
 
 /**
- * Deterministically parses raw Tax Invoice text into structured ASN form data
+ * Helper to extract Indian city from text or address line
+ */
+function extractCityFromText(text: string): string {
+  const upper = text.toUpperCase();
+
+  // 1. Scan known city list first
+  for (const city of INDIAN_CITIES) {
+    const wordRegex = new RegExp(`\\b${city}\\b`, 'i');
+    if (wordRegex.test(upper)) {
+      return city;
+    }
+  }
+
+  // 2. Check for word before 6-digit Indian PIN code (e.g. HOWRAH-711106 or GURUGRAM - 122015)
+  const pinMatch = upper.match(/([A-Z\s]{3,20})[-,\s]+(?:PIN\s*(?:CODE)?\s*[-:\s]*)?([1-9][0-9]{5})\b/);
+  if (pinMatch && pinMatch[1]) {
+    const candidate = pinMatch[1].trim().split(/[\n,]/).pop()?.trim() || '';
+    if (candidate.length >= 3 && candidate.length <= 18) {
+      return candidate;
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Deterministically and accurately parses raw Tax Invoice text into structured ASN form data.
+ * Zero hardcoded false defaults.
  */
 export function parseBillTextToASN(
   rawText: string,
@@ -88,120 +130,237 @@ export function parseBillTextToASN(
   const cleanText = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = cleanText.split('\n').map((l) => l.trim()).filter(Boolean);
 
-  // 1. Vendor Name
-  let vendorName = fallbackFactory?.name || 'MANISHA GARMENTS';
-  let vendorCity = 'KOLKATA';
-  let vendorMobileNo = fallbackFactory?.phone || '9007157204';
-  let bookingLocation = 'KOLKATA';
+  // -------------------------------------------------------------
+  // 1. Vendor (Seller) Extraction
+  // -------------------------------------------------------------
+  let vendorName = '';
+  let vendorCity = '';
+  let vendorMobileNo = '';
 
-  const sellerMatch = cleanText.match(/(?:Tax Invoice|INVOICE)\s*\n+([A-Z0-9\s.,&-]+?)\n/i);
-  if (sellerMatch && sellerMatch[1]) {
-    const candidate = sellerMatch[1].trim();
-    if (candidate.length > 3 && !candidate.toUpperCase().includes('CONSIGNEE')) {
-      vendorName = candidate;
+  // Look for seller block at the top of the invoice (before Consignee/Buyer/Invoice No)
+  const headerEndMarkers = [
+    'Consignee',
+    'Buyer',
+    'Bill To',
+    'Ship To',
+    'Invoice No',
+    'Bill No',
+    'GSTIN/UIN',
+    'GSTIN:',
+    'State Name',
+  ];
+
+  let headerLines: string[] = [];
+  for (const line of lines) {
+    const isMarker = headerEndMarkers.some((m) =>
+      line.toLowerCase().startsWith(m.toLowerCase())
+    );
+    if (isMarker && headerLines.length >= 1) break;
+    if (
+      !line.match(/^(?:TAX\s*INVOICE|INVOICE|ORIGINAL\s*FOR\s*RECIPIENT|DUPLICATE|TRIPLICATE)/i)
+    ) {
+      headerLines.push(line);
     }
   }
 
-  if (
-    cleanText.toLowerCase().includes('howrah') ||
-    cleanText.toLowerCase().includes('salkia') ||
-    cleanText.toLowerCase().includes('kolkata')
-  ) {
-    vendorCity = 'KOLKATA';
-    bookingLocation = 'KOLKATA';
+  if (headerLines.length > 0) {
+    vendorName = headerLines[0].replace(/^M\/s\.?\s*/i, '').trim();
   }
 
-  // 2. Invoice Number
+  // Fallback to factory store name only if vendorName is empty or invalid
+  if (!vendorName || vendorName.length < 2) {
+    vendorName = fallbackFactory?.name || '';
+  }
+
+  // Extract seller city
+  const headerText = headerLines.join('\n');
+  vendorCity = extractCityFromText(headerText);
+  if (!vendorCity && fallbackFactory) {
+    vendorCity = extractCityFromText(fallbackFactory.address || '') || fallbackFactory.state || '';
+  }
+
+  // Extract seller mobile/phone
+  const phoneMatch = cleanText.match(/(?:Phone|Ph|Tel|Mobile|Mob|Contact)\s*[:\s\-]*([0-9+\-\s]{10,15})/i);
+  if (phoneMatch && phoneMatch[1]) {
+    const digits = phoneMatch[1].replace(/[^0-9]/g, '');
+    if (digits.length >= 10) {
+      vendorMobileNo = digits.slice(-10);
+    }
+  }
+  if (!vendorMobileNo && fallbackFactory?.phone) {
+    vendorMobileNo = fallbackFactory.phone;
+  }
+
+  const bookingLocation = vendorCity || (fallbackFactory ? extractCityFromText(fallbackFactory.address || '') || fallbackFactory.state || '' : '');
+
+  // -------------------------------------------------------------
+  // 2. Invoice / Bill Number & Date
+  // -------------------------------------------------------------
   let vendorBillNo = '';
-  const invMatch = cleanText.match(/(?:Invoice\s*No\.?|Bill\s*No\.?)\s*[:\s\n]*([A-Z0-9\/\-_.]+)/i);
-  if (invMatch && invMatch[1]) {
-    const cand = invMatch[1].trim();
-    if (!cand.toLowerCase().includes('delivery') && !cand.toLowerCase().includes('dated')) {
+  let vendorBillDate = '';
+
+  const invNumMatch = cleanText.match(
+    /(?:Invoice\s*(?:No\.?|Number|#)|Bill\s*(?:No\.?|Number|#)|Inv\s*No\.?|Tax\s*Invoice\s*No\.?|GST\s*Invoice\s*No\.?)\s*[:\s\n]*([A-Za-z0-9\/\-_.]+)/i
+  );
+  if (invNumMatch && invNumMatch[1]) {
+    const cand = invNumMatch[1].trim();
+    if (!cand.toLowerCase().includes('dated') && !cand.toLowerCase().includes('delivery') && cand.length >= 2) {
       vendorBillNo = cand;
     }
   }
 
-  // 3. Dates extraction (Invoice Date vs PO Date)
-  // Find all "Dated" occurrences or date patterns
-  const allDates: string[] = [];
-  const dateRegex = /(?:Dated|Date)\s*[:\s\n]*([0-9]{1,2}[-/\s][A-Za-z0-9]+[-/\s][0-9]{2,4})/gi;
-  let dMatch;
-  while ((dMatch = dateRegex.exec(cleanText)) !== null) {
-    if (dMatch[1]) {
-      allDates.push(dMatch[1].trim());
-    }
+  // Look for Invoice Date
+  const invDateMatch = cleanText.match(
+    /(?:Invoice\s*Date|Bill\s*Date|Dated)\s*[:\s\n]*([0-9]{1,2}[-/\s.][A-Za-z0-9]+[-/\s.][0-9]{2,4})/i
+  );
+  if (invDateMatch && invDateMatch[1]) {
+    vendorBillDate = formatASNDate(invDateMatch[1]);
+  } else {
+    vendorBillDate = formatASNDate();
   }
 
-  let vendorBillDate = allDates.length > 0 ? formatASNDate(allDates[0]) : formatASNDate();
-  let poDate = allDates.length > 1 ? formatASNDate(allDates[1]) : vendorBillDate;
-
-  // 4. Buyer's Order No (PO NO)
+  // -------------------------------------------------------------
+  // 3. Buyer's Order No (PO NO) & PO Date
+  // -------------------------------------------------------------
   let poNo = '';
-  // Pattern 1: PO NO.3472 or PO NO. 3472
-  const explicitPoMatch = cleanText.match(/PO\s*NO\.?\s*([0-9A-Z\/\-_.]+)/i);
-  if (explicitPoMatch && explicitPoMatch[1]) {
-    const val = explicitPoMatch[1].trim();
-    if (val && !val.toLowerCase().includes('dated') && !val.toLowerCase().includes('despatch')) {
-      poNo = cleanPONumber(val);
+  let poDate = '';
+
+  // Pattern 1: Direct "PO NO. 3472" or "PO#: PO-7712" or "PO NUMBER: 12345" or "PO: 12345"
+  const directPoMatch = cleanText.match(
+    /\b(?:PO\s*(?:NO\.?|NUMBER|#|\:|\-|\/)*|P\.O\.\s*(?:NO\.?|NUMBER|#|\:|\-|\/)*)\s*([A-Za-z0-9\/\-_.]+)/i
+  );
+  if (directPoMatch && directPoMatch[1]) {
+    const cand = cleanPONumber(directPoMatch[1]);
+    if (cand && !cand.toLowerCase().includes('dated') && !cand.toLowerCase().includes('despatch') && cand.length >= 2) {
+      poNo = cand;
     }
   }
 
-  // Pattern 2: Buyer's Order No. followed by number
+  // Pattern 2: Buyer's Order No. / Order No.
   if (!poNo) {
-    const buyerOrderMatch = cleanText.match(/Buyer(?:’|')?s\s*Order\s*No\.?\s*[:\s\n]*([A-Z0-9\/\-_.]+)/i);
+    const buyerOrderMatch = cleanText.match(
+      /(?:Buyer(?:’|')?s\s*Order\s*No\.?|Buyer\s*PO\s*No\.?|Order\s*No\.?|Order\s*#)\s*[:\s\n]*([A-Za-z0-9\/\-_.]+)/i
+    );
     if (buyerOrderMatch && buyerOrderMatch[1]) {
-      const cand = buyerOrderMatch[1].trim();
-      if (cand.toLowerCase() === 'po' || cand.toLowerCase() === 'po.no' || cand.toLowerCase() === 'po.') {
-        // Look at next token
-        const afterPoMatch = cleanText.match(/Buyer(?:’|')?s\s*Order\s*No\.?[\s\S]*?PO\s*(?:NO\.?|#|\:)?\s*([A-Z0-9\/\-_.]+)/i);
-        if (afterPoMatch && afterPoMatch[1]) {
-          poNo = cleanPONumber(afterPoMatch[1].trim());
-        }
-      } else if (!cand.toLowerCase().includes('dated') && !cand.toLowerCase().includes('despatch')) {
-        poNo = cleanPONumber(cand);
+      const cand = cleanPONumber(buyerOrderMatch[1]);
+      if (cand && !cand.toLowerCase().includes('dated') && !cand.toLowerCase().includes('despatch') && cand.length >= 2) {
+        poNo = cand;
       }
     }
   }
 
-  // 5. Consignee / Dispatch Location
-  let dispatchLocation = '';
-  let buyerName = 'PRIMART';
-
-  if (
-    cleanText.includes('LOHARUKA') ||
-    cleanText.includes('PRIMART') ||
-    cleanText.includes('SHRIRAMPUR') ||
-    cleanText.includes('PANDIT SATHGHARA')
-  ) {
-    buyerName = 'PRIMART';
-    dispatchLocation =
-      'LOHARUKA INFRASTRUCTURE PRIVATE LIMITED\nKHATIAN NO 871 MOUZA-PANDIT SATHGHARA\nVILLAGE-SIMLA P.S -SHRIRAMPUR\nDIST HOOGHLY';
+  // Look for PO Date (often a second "Dated" line after Buyer's Order No or explicit "PO Date" / "Order Date")
+  const explicitPoDateMatch = cleanText.match(
+    /(?:PO\s*Date|Order\s*Date|Buyer(?:’|')?s\s*Order\s*Date)\s*[:\s\n]*([0-9]{1,2}[-/\s.][A-Za-z0-9]+[-/\s.][0-9]{2,4})/i
+  );
+  if (explicitPoDateMatch && explicitPoDateMatch[1]) {
+    poDate = formatASNDate(explicitPoDateMatch[1]);
   } else {
-    const consigneeIdx = cleanText.indexOf('Consignee');
-    const buyerIdx = cleanText.indexOf('Buyer (if other than consignee)');
-    const invNoIdx = cleanText.indexOf('Invoice No.');
+    // Collect all dates
+    const allDates: string[] = [];
+    const dateRegex = /(?:Dated|Date)\s*[:\s\n]*([0-9]{1,2}[-/\s.][A-Za-z0-9]+[-/\s.][0-9]{2,4})/gi;
+    let dMatch;
+    while ((dMatch = dateRegex.exec(cleanText)) !== null) {
+      if (dMatch[1]) allDates.push(dMatch[1].trim());
+    }
+    if (allDates.length > 1) {
+      poDate = formatASNDate(allDates[1]);
+    } else {
+      poDate = vendorBillDate;
+    }
+  }
 
-    if (consigneeIdx !== -1) {
-      const endIdx = buyerIdx !== -1 ? buyerIdx : (invNoIdx !== -1 ? invNoIdx : consigneeIdx + 350);
-      const consigneeBlock = cleanText.substring(consigneeIdx, endIdx);
-      const cLines = consigneeBlock
+  // -------------------------------------------------------------
+  // 4. Consignee / Dispatch Location & Buyer
+  // -------------------------------------------------------------
+  let buyerName = '';
+  let dispatchLocation = '';
+  let emailRecipient = '';
+  let contactPhone = '';
+
+  const consigneeStartIdx = cleanText.search(/Consignee(?:\s*\(Ship to\))?/i);
+  const buyerStartIdx = cleanText.search(/Buyer(?:\s*\(Bill to\)|\s*\(if other than consignee\))?/i);
+  const invoiceStartIdx = cleanText.search(/(?:Invoice\s*No|Bill\s*No)/i);
+
+  const cleanPartyLine = (line: string) => {
+    return line
+      .replace(/^(?:Bill\s*To\s*\/?\s*Ship\s*To|Bill\s*To|Ship\s*To|Consignee\s*\(Ship\s*to\)|Buyer\s*\(Bill\s*to\)|Consignee|Buyer)\s*[:\s\-]*/i, '')
+      .replace(/^M\/s\.?\s*/i, '')
+      .trim();
+  };
+
+  if (consigneeStartIdx !== -1) {
+    const endIdx =
+      buyerStartIdx > consigneeStartIdx
+        ? buyerStartIdx
+        : invoiceStartIdx > consigneeStartIdx
+        ? invoiceStartIdx
+        : consigneeStartIdx + 400;
+
+    const consigneeBlock = cleanText.substring(consigneeStartIdx, endIdx);
+    const cLines = consigneeBlock
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(
+        (l) =>
+          l &&
+          !l.match(/^(?:Consignee|GSTIN|State\s*Name|PAN|CIN)/i) &&
+          !l.includes('GSTIN/UIN')
+      )
+      .map(cleanPartyLine)
+      .filter(Boolean);
+
+    if (cLines.length > 0) {
+      buyerName = cLines[0];
+      dispatchLocation = cLines.join('\n');
+    }
+  } else if (buyerStartIdx !== -1) {
+    const endIdx = invoiceStartIdx > buyerStartIdx ? invoiceStartIdx : buyerStartIdx + 400;
+    const buyerBlock = cleanText.substring(buyerStartIdx, endIdx);
+    const bLines = buyerBlock
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.match(/^(?:Buyer|GSTIN|State\s*Name)/i))
+      .map(cleanPartyLine)
+      .filter(Boolean);
+
+    if (bLines.length > 0) {
+      buyerName = bLines[0];
+      dispatchLocation = bLines.join('\n');
+    }
+  } else {
+    // Check for "Bill To" or "Ship To"
+    const billToMatch = cleanText.match(/(?:Bill\s*To\s*\/?\s*Ship\s*To|Bill\s*To|Ship\s*To)\s*[:\s\n]*([\s\S]*?)(?:Invoice\s*No|Bill\s*No|Total|Sl\s*No|\n\n)/i);
+    if (billToMatch && billToMatch[1]) {
+      const bLines = billToMatch[1]
         .split('\n')
         .map((l) => l.trim())
-        .filter((l) => l && !l.startsWith('Consignee') && !l.includes('GSTIN') && !l.includes('State Name'));
-
-      if (cLines.length > 0) {
-        buyerName = cLines[0];
-        dispatchLocation = cLines.join('\n');
+        .filter((l) => l && !l.startsWith('GSTIN'))
+        .map(cleanPartyLine)
+        .filter(Boolean);
+      if (bLines.length > 0) {
+        buyerName = bLines[0];
+        dispatchLocation = bLines.join('\n');
       }
     }
   }
 
-  // 6. Vendor Bill Quantity & Value
+  // Look for buyer email in document text
+  const emailMatch = cleanText.match(/\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/);
+  if (emailMatch && emailMatch[1]) {
+    emailRecipient = emailMatch[1];
+  }
+
+  // -------------------------------------------------------------
+  // 5. Quantities & Total Value
+  // -------------------------------------------------------------
   let vendorBillQuantity: string | number = '';
   let vendorBillValue: string | number = '';
 
-  // Look for "Total 196.000 PCS ₹ 27,783.00" or similar total lines
-  const totalLineMatch = cleanText.match(/Total\s+([0-9,]+(?:\.[0-9]+)?)\s*(?:PCS|SET|MTR|KG|DOZ)?\s*(?:₹|INR|Rs\.?|\u20B9|\u012B)?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+  // Pattern A: "Total 196.000 PCS ₹ 27,783.00" or "Total 800.00 PCS ₹ 2,10,000.00"
+  const totalLineMatch = cleanText.match(
+    /Total\s+([0-9,]+(?:\.[0-9]+)?)\s*(?:PCS|Units|SET|MTR|KG|DOZ|NOS|Pieces)?\s*(?:₹|INR|Rs\.?|\u20B9|\u012B)?\s*([0-9,]+(?:\.[0-9]{2})?)/i
+  );
   if (totalLineMatch) {
     const rawQty = parseFloat(totalLineMatch[1].replace(/,/g, ''));
     if (!isNaN(rawQty)) {
@@ -215,7 +374,9 @@ export function parseBillTextToASN(
 
   // Fallback for Quantity
   if (!vendorBillQuantity) {
-    const qtyMatch = cleanText.match(/(?:Quantity|Qty|Total Qty)\s*[:\s]*([0-9,]+(?:\.[0-9]+)?)/i);
+    const qtyMatch = cleanText.match(
+      /(?:Total\s*Quantity|Total\s*Qty|Qty\s*Total|Quantity\s*Total|Total\s*PCS)\s*[:\s]*([0-9,]+(?:\.[0-9]+)?)/i
+    );
     if (qtyMatch && qtyMatch[1]) {
       vendorBillQuantity = Math.round(parseFloat(qtyMatch[1].replace(/,/g, '')) || 0);
     }
@@ -223,10 +384,70 @@ export function parseBillTextToASN(
 
   // Fallback for Total Amount / Value
   if (!vendorBillValue) {
-    const valMatch = cleanText.match(/(?:Amount Chargeable|Total Amount|Grand Total|Invoice Total)\s*[:\s]*(?:₹|INR|Rs\.?)?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+    const valMatch = cleanText.match(
+      /(?:Amount\s*Chargeable|Total\s*Amount|Grand\s*Total|Invoice\s*Total|Net\s*Payable|Net\s*Amount)\s*[:\s]*(?:₹|INR|Rs\.?)?\s*([0-9,]+(?:\.[0-9]{2})?)/i
+    );
     if (valMatch && valMatch[1]) {
       vendorBillValue = Math.round(parseFloat(valMatch[1].replace(/,/g, '')) || 0);
     }
+  }
+
+  // -------------------------------------------------------------
+  // 6. Logistics / Transport Details
+  // -------------------------------------------------------------
+  let transporterName = '';
+  let transporterLrNo = '';
+  let dateOfLr = '';
+  let wayBillNo = '';
+  let noOfCartons: string | number = '';
+  let totalWeight: string | number = '';
+
+  const transMatch = cleanText.match(
+    /(?:Despatched\s*through|Transport(?:er)?(?:\s*Name)?|Carrier|Courier|Through|By\s*Transport)\s*[:\s\n]*([A-Za-z0-9\s.,&-]+?)(?:\n|LR|Despatch|Date|Mode|Terms|Vehicle|Destination|Delivery|Terms|$)/i
+  );
+  if (transMatch && transMatch[1]) {
+    const cand = transMatch[1].trim();
+    if (cand.length >= 2 && !cand.toLowerCase().includes('dated') && !cand.toLowerCase().includes('terms')) {
+      transporterName = cand;
+    }
+  }
+
+  const lrMatch = cleanText.match(
+    /(?:Despatch\s*Document\s*No\.?|LR\s*(?:No\.?|Number|#)|GR\s*(?:No\.?|Number|#)|Bilty\s*No\.?|Docket\s*No\.?|RR\s*No\.?|CN\s*No\.?)\s*[:\s\n]*([A-Za-z0-9\/\-_.]+)/i
+  );
+  if (lrMatch && lrMatch[1]) {
+    const cand = lrMatch[1].trim();
+    if (cand.length >= 2 && !cand.toLowerCase().includes('dated')) {
+      transporterLrNo = cand;
+    }
+  }
+
+  const lrDateMatch = cleanText.match(
+    /(?:Delivery\s*Note\s*Date|LR\s*Date|GR\s*Date|Date\s*of\s*LR)\s*[:\s\n]*([0-9]{1,2}[-/\s.][A-Za-z0-9]+[-/\s.][0-9]{2,4})/i
+  );
+  if (lrDateMatch && lrDateMatch[1]) {
+    dateOfLr = formatASNDate(lrDateMatch[1]);
+  }
+
+  const ewbMatch = cleanText.match(
+    /(?:E-?Way\s*Bill\s*No\.?|Way\s*Bill\s*No\.?|EWB\s*No\.?)\s*[:\s\n]*([0-9A-Za-z\/\-_.]+)/i
+  );
+  if (ewbMatch && ewbMatch[1]) {
+    wayBillNo = ewbMatch[1].trim();
+  }
+
+  const cartonsMatch = cleanText.match(
+    /(?:No\.?\s*of\s*(?:Cartons|Boxes|Packages|Cases|Bales|Bags|Pkgs)|Cartons|Packages)\s*[:\s\n]*([0-9]+)/i
+  );
+  if (cartonsMatch && cartonsMatch[1]) {
+    noOfCartons = cartonsMatch[1].trim();
+  }
+
+  const weightMatch = cleanText.match(
+    /(?:Total\s*Weight|Gross\s*Weight|Net\s*Weight|Weight)\s*[:\s\n]*([0-9.,]+\s*(?:KG|KGS|MT|TONS|GMS)?)/i
+  );
+  if (weightMatch && weightMatch[1]) {
+    totalWeight = weightMatch[1].trim();
   }
 
   return {
@@ -237,28 +458,29 @@ export function parseBillTextToASN(
     asnNumber: '',
     asnDate: vendorBillDate || formatASNDate(),
     dispatchLocation,
-    poNo: poNo || '3472',
+    poNo,
     poDate: poDate || vendorBillDate || formatASNDate(),
-    vendorBillNo: vendorBillNo || 'GST/MG/201/26-27',
+    vendorBillNo,
     vendorBillDate: vendorBillDate || formatASNDate(),
-    vendorBillValue: vendorBillValue || '27783',
-    vendorBillQuantity: vendorBillQuantity || '196',
-    transporterName: '',
-    transporterLrNo: '',
-    dateOfLr: '',
-    wayBillNo: '',
-    noOfCartons: '',
+    vendorBillValue: vendorBillValue || '',
+    vendorBillQuantity: vendorBillQuantity || '',
+    transporterName,
+    transporterLrNo,
+    dateOfLr,
+    wayBillNo,
+    noOfCartons,
     identificationMark: '',
-    totalWeight: '',
+    totalWeight,
     expectedLeadTimeDays: '',
     buyerName,
-    emailRecipient: 'sdr@primart.co.in',
-    contactPhone: '7777777777',
+    emailRecipient,
+    contactPhone,
   };
 }
 
 /**
- * Converts an existing Invoice record in FactoryOS into ASN form data
+ * Converts an existing Invoice record in FactoryOS into ASN form data.
+ * Zero hardcoded false defaults.
  */
 export function convertInvoiceToASN(
   invoice: Invoice,
@@ -276,17 +498,19 @@ export function convertInvoiceToASN(
   if (consigneeParty?.address) {
     dispatchLocation = `${consigneeParty.name}\n${consigneeParty.address}`;
   } else {
-    dispatchLocation = consigneeParty?.name || 'Loharuka Infrastructure Pvt Ltd';
+    dispatchLocation = consigneeParty?.name || '';
   }
 
   const billDate = formatASNDate(invoice.date);
   const poDate = formatASNDate(invoice.buyer_order_date || invoice.date);
 
+  const factoryCity = (extractCityFromText(factory.address || '') || factory.state || '').toUpperCase();
+
   return {
-    vendorName: factory.name || 'MANISHA GARMENTS',
-    vendorCity: 'KOLKATA',
-    bookingLocation: 'KOLKATA',
-    vendorMobileNo: factory.phone || '9007157204',
+    vendorName: factory.name || '',
+    vendorCity: factoryCity,
+    bookingLocation: factoryCity,
+    vendorMobileNo: factory.phone || '',
     asnNumber: '',
     asnDate: billDate,
     dispatchLocation,
@@ -304,97 +528,8 @@ export function convertInvoiceToASN(
     identificationMark: '',
     totalWeight: '',
     expectedLeadTimeDays: '',
-    buyerName: buyerParty?.name || 'PRIMART',
-    emailRecipient: 'sdr@primart.co.in',
-    contactPhone: '7777777777',
-  };
-}
-
-/**
- * AI-powered invoice parser using Groq LLM
- */
-export async function parseBillWithAI(
-  documentText: string,
-  options: { apiKey?: string; model?: string } = {}
-): Promise<ASNFormData> {
-  const apiKey = options.apiKey || EMBEDDED_GROQ_API_KEY;
-  const model = options.model || 'openai/gpt-oss-120b';
-
-  const systemPrompt = `
-You are an expert Document Intelligence AI for Indian GST Tax Invoices and Advance Shipping Notifications (ASN).
-Extract the following exact fields from the provided invoice text and return a valid JSON object matching this schema:
-{
-  "vendorName": string,
-  "vendorCity": string,
-  "bookingLocation": string,
-  "vendorMobileNo": string,
-  "dispatchLocation": string (full address of consignee / delivery destination),
-  "poNo": string (buyer order / PO number stripped of 'PO NO.' prefix),
-  "poDate": string (in DD/MM/YYYY or DD-MMM-YYYY format),
-  "vendorBillNo": string (invoice number),
-  "vendorBillDate": string (invoice date in DD/MM/YYYY format),
-  "vendorBillValue": number (total amount including tax, rounded integer),
-  "vendorBillQuantity": number (total pieces/quantity integer),
-  "buyerName": string,
-  "emailRecipient": string (default 'sdr@primart.co.in'),
-  "contactPhone": string (default '7777777777')
-}
-Return strict JSON only.
-`;
-
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `Please extract all ASN and billing fields from this invoice:\n\n${documentText.slice(0, 40000)}`,
-        },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(`Groq LLM error: ${errBody}`);
-  }
-
-  const data = await response.json();
-  const raw = data.choices?.[0]?.message?.content?.trim();
-  const parsed = JSON.parse(raw);
-
-  return {
-    vendorName: parsed.vendorName || 'MANISHA GARMENTS',
-    vendorCity: parsed.vendorCity || 'KOLKATA',
-    bookingLocation: parsed.bookingLocation || parsed.vendorCity || 'KOLKATA',
-    vendorMobileNo: parsed.vendorMobileNo || '9007157204',
-    asnNumber: parsed.asnNumber || '',
-    asnDate: formatASNDate(parsed.vendorBillDate),
-    dispatchLocation: parsed.dispatchLocation || '',
-    poNo: cleanPONumber(parsed.poNo),
-    poDate: formatASNDate(parsed.poDate),
-    vendorBillNo: parsed.vendorBillNo || '',
-    vendorBillDate: formatASNDate(parsed.vendorBillDate),
-    vendorBillValue: parsed.vendorBillValue || 0,
-    vendorBillQuantity: parsed.vendorBillQuantity || 0,
-    transporterName: parsed.transporterName || '',
-    transporterLrNo: parsed.transporterLrNo || '',
-    dateOfLr: parsed.dateOfLr ? formatASNDate(parsed.dateOfLr) : '',
-    wayBillNo: parsed.wayBillNo || '',
-    noOfCartons: parsed.noOfCartons || '',
-    identificationMark: parsed.identificationMark || '',
-    totalWeight: parsed.totalWeight || '',
-    expectedLeadTimeDays: parsed.expectedLeadTimeDays || '',
-    buyerName: parsed.buyerName || 'PRIMART',
-    emailRecipient: parsed.emailRecipient || 'sdr@primart.co.in',
-    contactPhone: parsed.contactPhone || '7777777777',
+    buyerName: buyerParty?.name || consigneeParty?.name || '',
+    emailRecipient: '',
+    contactPhone: buyerParty?.phone || consigneeParty?.phone || '',
   };
 }

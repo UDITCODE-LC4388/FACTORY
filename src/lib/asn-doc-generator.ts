@@ -93,8 +93,8 @@ function createCell(
  * Builds the complete Advance Shipping Notification docx Document object
  */
 export function buildASNDocument(data: ASNFormData): Document {
-  const emailRecipient = data.emailRecipient || 'sdr@primart.co.in';
-  const contactPhone = data.contactPhone || '7777777777';
+  const emailRecipient = data.emailRecipient || '';
+  const contactPhone = data.contactPhone || '';
 
   // Table 1 Rows (Vendor & Billing Details)
   const table1Rows: TableRow[] = [

@@ -9,8 +9,8 @@ interface ASNPreviewTemplateProps {
 }
 
 export function ASNPreviewTemplate({ data, className = '' }: ASNPreviewTemplateProps) {
-  const emailRecipient = data.emailRecipient || 'sdr@primart.co.in';
-  const contactPhone = data.contactPhone || '7777777777';
+  const emailRecipient = data.emailRecipient || '';
+  const contactPhone = data.contactPhone || '';
 
   return (
     <div
