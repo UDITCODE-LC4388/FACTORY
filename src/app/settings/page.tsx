@@ -15,6 +15,7 @@ import {
   Key,
   Globe,
   Radio,
+  Sparkles,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -206,35 +207,25 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* 3. AI Multimodal Document Vision Engine */}
-        <div className="p-6 rounded-2xl bg-slate-900/90 border border-blue-500/30 backdrop-blur space-y-4 shadow">
+        {/* 3. AI Open-Source LLM Document Engine */}
+        <div className="p-6 rounded-2xl bg-slate-900/90 border border-emerald-500/30 backdrop-blur space-y-4 shadow">
           <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-            <Key className="h-5 w-5 text-blue-400" />
+            <Sparkles className="h-5 w-5 text-emerald-400" />
             <h2 className="text-sm font-bold text-white">AI Purchase Order Reading Engine</h2>
           </div>
 
           <div className="space-y-3 text-xs text-slate-300">
             <p>
-              FactoryOS uses <strong>Google Gemini 2.5 Flash Multimodal Vision</strong> to read purchase orders from PDFs, scans, photos, and multi-order files with 100% template independence.
+              FactoryOS has <strong>Embedded Groq Open-Source LLM Cloud Acceleration</strong> active by default, providing high-speed template-independent purchase order reading and multi-order splitting.
             </p>
 
-            <div className="space-y-1.5">
-              <label className="font-semibold text-slate-200">Google Gemini API Key</label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder="Paste your Gemini API Key (e.g. AIzaSy...)"
-                  defaultValue={typeof window !== 'undefined' ? localStorage.getItem('factory_gemini_api_key') || '' : ''}
-                  onChange={(e) => {
-                    if (typeof window !== 'undefined') {
-                      localStorage.setItem('factory_gemini_api_key', e.target.value.trim());
-                    }
-                  }}
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            <div className="p-3 rounded-xl bg-slate-850 border border-slate-800 text-[11px] space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-bold text-white">Engine Status: Active & Embedded</span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                You can get a free key from Google AI Studio. Stored securely in your local browser session or set in <code>.env.local</code> as <code>GEMINI_API_KEY</code>.
+              <p className="text-slate-400">
+                Zero configuration required &bull; 100% template-independent &bull; Multi-PO file splitting &bull; 1-click simultaneous billing
               </p>
             </div>
           </div>

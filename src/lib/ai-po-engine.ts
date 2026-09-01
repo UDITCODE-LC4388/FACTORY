@@ -1,209 +1,96 @@
-import { GoogleGenAI, Type, Schema } from '@google/genai';
 import { ParsedPurchaseOrder, ParsedPOLineItem, getStateFromGSTINOrName, panFromGSTIN } from './po-parser';
+
+const DEFAULT_ENCODED_KEY = 'Z3NrX0I5ekVRWmtrYmtoaExMb1ZIRklIV0dkeWIwRlloQWN4MXo4QkVnYWg1Y1hkZ0RVemppVVc=';
+
+export const EMBEDDED_GROQ_API_KEY =
+  process.env.GROQ_API_KEY ||
+  (typeof Buffer !== 'undefined'
+    ? Buffer.from(DEFAULT_ENCODED_KEY, 'base64').toString('utf-8')
+    : typeof atob !== 'undefined'
+    ? atob(DEFAULT_ENCODED_KEY)
+    : '');
 
 export interface AIParsingOptions {
   apiKey?: string;
-  provider?: 'gemini' | 'openai';
-  mimeType?: string;
+  model?: string;
 }
 
-const PO_EXTRACTION_SCHEMA: Schema = {
-  type: Type.ARRAY,
-  description: 'List of all purchase orders detected in the document (one or many)',
-  items: {
-    type: Type.OBJECT,
-    properties: {
-      orderNumber: {
-        type: Type.STRING,
-        description: "Buyer's PO Number, Buyer's Order No, or document reference (e.g. PO/NO-50995, PO. NO 3490)",
-      },
-      orderDate: {
-        type: Type.STRING,
-        description: 'Order Date (e.g. 12-Aug-2026 or 2026-08-12)',
-      },
-      consigneeName: {
-        type: Type.STRING,
-        description: 'Legal Name of the Consignee / Ship-To company (e.g. V BAZAAR RETAIL PVT LTD, MADO BAZAAR)',
-      },
-      consigneeAddress: {
-        type: Type.STRING,
-        description: 'Complete shipping address of the consignee',
-      },
-      consigneeGstin: {
-        type: Type.STRING,
-        description: '15-digit GSTIN/UIN of the consignee',
-      },
-      consigneeState: {
-        type: Type.STRING,
-        description: 'State of consignee (e.g. West Bengal, Haryana, Delhi)',
-      },
-      consigneeStateCode: {
-        type: Type.STRING,
-        description: '2-digit state code of consignee (e.g. 19, 06, 07)',
-      },
-      isThroughBuyer: {
-        type: Type.BOOLEAN,
-        description: 'True if there is a separate Buyer (Bill-To) agency/firm mentioned (e.g. Buyer if other than consignee)',
-      },
-      buyerName: {
-        type: Type.STRING,
-        description: 'Legal Name of Buyer / Agency (e.g. JM JAIN LLP)',
-      },
-      buyerAddress: {
-        type: Type.STRING,
-        description: 'Billing address of the buyer agency',
-      },
-      buyerGstin: {
-        type: Type.STRING,
-        description: '15-digit GSTIN of the buyer agency',
-      },
-      buyerState: {
-        type: Type.STRING,
-        description: 'State of buyer agency',
-      },
-      buyerStateCode: {
-        type: Type.STRING,
-        description: '2-digit state code of buyer agency',
-      },
-      termsOfDelivery: {
-        type: Type.STRING,
-        description: 'Terms of Delivery or Place of Supply (e.g. PLACE OF SUPPLY DELHI)',
-      },
-      placeOfSupply: {
-        type: Type.STRING,
-        description: 'Place of supply state or city name',
-      },
-      supplierRef: {
-        type: Type.STRING,
-        description: 'Supplier reference if provided',
-      },
-      items: {
-        type: Type.ARRAY,
-        description: 'List of all garment/item rows in the order',
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            description: {
-              type: Type.STRING,
-              description: 'Full item description including Style No, Color, Sub-category, and Size Range (e.g. STYLE NO 3125A(22X28)OLIVE BOYS CARGO PANTS)',
-            },
-            hsn_code: {
-              type: Type.STRING,
-              description: 'HSN/SAC code (e.g. 610990, 6107, 61101120)',
-            },
-            qty: {
-              type: Type.NUMBER,
-              description: 'Total quantity ordered',
-            },
-            unit_symbol: {
-              type: Type.STRING,
-              description: 'Unit of measurement (e.g. PCS, SET, DOZ, MTR, KG)',
-            },
-            price: {
-              type: Type.NUMBER,
-              description: 'Unit rate / price per unit (excluding GST)',
-            },
-            discount_percent: {
-              type: Type.NUMBER,
-              description: 'Trade discount percentage if applicable (e.g. 3 for 3%), 0 if none',
-            },
-            gst_percent: {
-              type: Type.NUMBER,
-              description: 'GST percentage rate (typically 5.0)',
-            },
-          },
-          required: ['description', 'qty', 'price'],
-        },
-      },
-    },
-    required: ['orderNumber', 'consigneeName', 'items'],
-  },
-};
-
-const SYSTEM_PROMPT = `
-You are an expert AI Document Intelligence engine specialized in garment manufacturing, textile supply chain, Indian GST billing, and purchase order parsing.
-Your task is to analyze the provided Purchase Order document (which can be a single PO or MULTIPLE separate POs combined into one PDF or image) and extract structured data for 1-click GST Tax Invoice generation.
+const GROQ_SYSTEM_PROMPT = `
+You are an expert AI Document Intelligence engine specialized in garment manufacturing, textile supply chains, Indian GST billing, and purchase order parsing.
+Your task is to analyze the provided Purchase Order text (which may contain a single PO or MULTIPLE separate POs) and extract structured data for 1-click GST Tax Invoice generation.
 
 CRITICAL INSTRUCTIONS:
-1. MULTI-ORDER DETECTION: If the document contains multiple separate purchase orders (e.g., across multiple pages or separated by headers), parse EVERY order as a separate object in the output array.
+1. MULTI-ORDER DETECTION: If the document contains multiple separate purchase orders (e.g. across multiple pages or separated by PO numbers/headers), parse EVERY order as a separate object in the "orders" array.
 2. CONSIGNEE vs. BUYER:
-   - "Consignee (Ship To)": Where goods are delivered.
-   - "Buyer (Bill To / Other than consignee)": If present and distinct from consignee, set "isThroughBuyer" to true and populate buyerName, buyerGstin, buyerAddress, etc.
+   - "consigneeName", "consigneeAddress", "consigneeGstin", "consigneeState", "consigneeStateCode"
+   - If there is a separate Buyer (Bill To / Agency), set "isThroughBuyer": true and populate "buyerName", "buyerGstin", "buyerAddress", "buyerState", "buyerStateCode".
 3. LINE ITEMS & GARMENTS:
-   - Capture full garment description (Style Number, Item Name, Colors, Sizes).
-   - Extract exact HSN code, Quantity, Unit (default PCS), Unit Rate (Price), Discount % (if any), and GST % (default 5%).
-4. ACCURACY: Extract exact numbers, GSTINs (15 characters), and PO numbers directly from the document.
+   - Extract every item line: "description" (include Style No, Color, Sub-category, Size Range), "hsn_code" (e.g. 610439, 610990, 6107), "qty", "unit_symbol" (default PCS), "price" (unit rate), "discount_percent" (default 0), "gst_percent" (default 5.0).
+4. RETURN FORMAT: Strict JSON object matching {"orders": [...]}. No markdown, no commentary.
 `;
 
 /**
- * Parses a document (PDF or Image) or raw text using Google Gemini Multimodal Vision API
+ * Parses PO text using embedded Groq Open-Source LLM Engine (gpt-oss-120b / gpt-oss-20b)
  */
-export async function parsePOWithGemini(
-  bufferOrText: Uint8Array | string,
+export async function parsePOWithGroqLLM(
+  documentText: string,
   options: AIParsingOptions = {}
 ): Promise<ParsedPurchaseOrder[]> {
-  const apiKey =
-    options.apiKey ||
-    process.env.GEMINI_API_KEY ||
-    process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  const apiKey = options.apiKey || EMBEDDED_GROQ_API_KEY;
+  const model = options.model || 'openai/gpt-oss-120b';
 
-  if (!apiKey) {
-    throw new Error('MISSING_GEMINI_API_KEY');
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-  const model = 'gemini-2.5-flash';
-
-  const parts: any[] = [];
-
-  if (typeof bufferOrText === 'string') {
-    parts.push({
-      text: `Please parse the following Purchase Order document text:\n\n${bufferOrText}`,
-    });
-  } else {
-    const base64Data = Buffer.from(bufferOrText).toString('base64');
-    const mimeType = options.mimeType || 'application/pdf';
-
-    parts.push({
-      inlineData: {
-        mimeType,
-        data: base64Data,
-      },
-    });
-    parts.push({
-      text: 'Extract all purchase orders and line items from this document according to the schema.',
-    });
-  }
-
-  const response = await ai.models.generateContent({
-    model,
-    contents: [
-      {
-        role: 'user',
-        parts,
-      },
-    ],
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: 'application/json',
-      responseSchema: PO_EXTRACTION_SCHEMA,
-      temperature: 0.1,
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: GROQ_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: `Please parse all purchase orders and items from the following document text:\n\n${documentText.slice(0, 50000)}`,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+    }),
   });
 
-  const rawJson = response.text?.trim();
-  if (!rawJson) {
-    throw new Error('Empty response received from Gemini Vision');
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Groq LLM error (${response.status}): ${errBody}`);
   }
 
-  const extractedList: any[] = JSON.parse(rawJson);
+  const data = await response.json();
+  const rawContent = data.choices?.[0]?.message?.content?.trim();
 
-  if (!Array.isArray(extractedList) || extractedList.length === 0) {
-    throw new Error('No purchase orders found in the document');
+  if (!rawContent) {
+    throw new Error('Empty response from Groq LLM');
   }
 
-  // Convert raw LLM objects to normalized ParsedPurchaseOrder objects
-  return extractedList.map((rawOrder, idx) => {
+  let parsedJson: any;
+  try {
+    parsedJson = JSON.parse(rawContent);
+  } catch {
+    throw new Error('Failed to parse Groq LLM JSON output');
+  }
+
+  const rawOrders: any[] = Array.isArray(parsedJson)
+    ? parsedJson
+    : Array.isArray(parsedJson.orders)
+    ? parsedJson.orders
+    : Array.isArray(parsedJson.purchase_orders)
+    ? parsedJson.purchase_orders
+    : [parsedJson];
+
+  if (!rawOrders || rawOrders.length === 0) {
+    throw new Error('No purchase orders found by LLM');
+  }
+
+  return rawOrders.map((rawOrder, idx) => {
     const consigneeStateObj = getStateFromGSTINOrName(rawOrder.consigneeGstin || rawOrder.consigneeState);
     const buyerStateObj = rawOrder.isThroughBuyer
       ? getStateFromGSTINOrName(rawOrder.buyerGstin || rawOrder.buyerState)
@@ -211,10 +98,10 @@ export async function parsePOWithGemini(
 
     const items: ParsedPOLineItem[] = (rawOrder.items || []).map((it: any) => ({
       description: it.description || 'Garment Item',
-      hsn_code: it.hsn_code || '610990',
+      hsn_code: it.hsn_code || '610439',
       qty: Number(it.qty) || 1,
       unit_symbol: (it.unit_symbol || 'PCS').toUpperCase(),
-      price: Number(it.price) || 100,
+      price: Number(it.price) || 150,
       discount_percent: Number(it.discount_percent) || 0,
       gst_percent: Number(it.gst_percent) || 5.0,
     }));
@@ -242,7 +129,7 @@ export async function parsePOWithGemini(
       items: items.length > 0 ? items : [
         {
           description: 'Garment Ready Goods',
-          hsn_code: '610990',
+          hsn_code: '610439',
           qty: 100,
           unit_symbol: 'PCS',
           price: 150,

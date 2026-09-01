@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { ParsedPurchaseOrder, parseMultiOrderPOText } from '@/lib/po-parser';
 import { formatINR } from '@/lib/gst';
@@ -20,9 +20,8 @@ import {
   Eye,
   CheckSquare,
   Square,
-  Key,
-  Settings,
   Zap,
+  Cpu,
 } from 'lucide-react';
 import { Invoice, Party } from '@/types/database.types';
 
@@ -32,10 +31,13 @@ interface POUploadModalProps {
   onSuccess?: (createdInvoice: Invoice, shouldPrint?: boolean) => void;
 }
 
+export type AnalysisEngine = 'auto' | 'groq-llm' | 'deterministic';
+
 export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps) {
   const { factory, parties, addParty, createSaleOrder, convertSaleOrderToInvoice } = useFactory();
 
   const [activeTab, setActiveTab] = useState<'upload' | 'paste'>('upload');
+  const [engineMode, setEngineMode] = useState<AnalysisEngine>('auto');
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parsedOrders, setParsedOrders] = useState<ParsedPurchaseOrder[] | null>(null);
@@ -45,26 +47,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
   const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
   const [parsedMethod, setParsedMethod] = useState<string>('');
 
-  // Gemini API Key State
-  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
-  const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('factory_gemini_api_key') || '';
-      setGeminiApiKey(stored);
-    }
-  }, []);
-
-  const saveApiKey = (key: string) => {
-    setGeminiApiKey(key);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('factory_gemini_api_key', key.trim());
-    }
-    setShowKeyInput(false);
-  };
 
   if (!isOpen) return null;
 
@@ -84,7 +67,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
       const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
 
       if (isPdf) {
-        // Direct in-browser ultra-fast extraction (handles 50+ MB PDFs with 0 network payload limits)
+        // Direct in-browser ultra-fast extraction (handles 100+ page PDFs with 0 Vercel payload limits)
         const arrayBuffer = await file.arrayBuffer();
         const buffer = new Uint8Array(arrayBuffer);
         const { extractText } = await import('unpdf');
@@ -92,13 +75,14 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
         const pagesArray = Array.isArray(text) ? text : [typeof text === 'string' ? text : ''];
         
         let orders = parseMultiOrderPOText(pagesArray);
+        let usedEngine = 'deterministic';
 
-        // If Gemini API Key is configured, optionally enrich via AI using clean lightweight text payload (<100 KB)
-        if (geminiApiKey.trim() && pagesArray.join('').trim().length > 0) {
+        // If Groq LLM mode selected, enrich with Groq Cloud LLM
+        if (engineMode === 'groq-llm' || (engineMode === 'auto' && orders.length <= 5)) {
           try {
             const formData = new FormData();
             formData.append('text', pagesArray.join('\n\n---PAGE---\n\n'));
-            formData.append('apiKey', geminiApiKey.trim());
+            formData.append('engineMode', 'groq-llm');
 
             const res = await fetch('/api/parse-po', {
               method: 'POST',
@@ -109,11 +93,11 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
               const aiData = await res.json();
               if (aiData.success && aiData.orders && aiData.orders.length > 0) {
                 orders = aiData.orders;
-                setParsedMethod('gemini-vision');
+                usedEngine = 'groq-llm';
               }
             }
-          } catch (aiErr) {
-            console.warn('Gemini text enrichment error, using local extractor:', aiErr);
+          } catch (llmErr) {
+            console.warn('Groq LLM text enrichment fallback to precision parser:', llmErr);
           }
         }
 
@@ -124,16 +108,12 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
         setParsedOrders(orders);
         setSelectedOrderIndex(0);
         setSelectedMultiIndices(orders.map((_item: ParsedPurchaseOrder, idx: number) => idx));
-        if (!parsedMethod) {
-          setParsedMethod('local-engine');
-        }
+        setParsedMethod(usedEngine);
       } else {
-        // Images (PNG, JPG, WEBP) -> send to API route for OCR / Vision
+        // Images (PNG, JPG, WEBP) -> send to API route for OCR / Groq LLM
         const formData = new FormData();
         formData.append('file', file);
-        if (geminiApiKey.trim()) {
-          formData.append('apiKey', geminiApiKey.trim());
-        }
+        formData.append('engineMode', engineMode);
 
         const res = await fetch('/api/parse-po', {
           method: 'POST',
@@ -142,7 +122,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
 
         const data = await res.json();
         if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to parse image file');
+          throw new Error(data.error || 'Failed to parse image document');
         }
 
         const orders: ParsedPurchaseOrder[] = data.orders;
@@ -153,7 +133,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
         setParsedOrders(orders);
         setSelectedOrderIndex(0);
         setSelectedMultiIndices(orders.map((_item: ParsedPurchaseOrder, idx: number) => idx));
-        setParsedMethod(data.parsedWith || 'engine');
+        setParsedMethod(data.parsedWith || 'groq-llm');
       }
     } catch (err: unknown) {
       console.error('PO Parsing error:', err);
@@ -175,31 +155,40 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
     setParsedMethod('');
 
     try {
-      const formData = new FormData();
-      formData.append('text', pastedText);
-      if (geminiApiKey.trim()) {
-        formData.append('apiKey', geminiApiKey.trim());
+      let orders = parseMultiOrderPOText(pastedText);
+      let usedEngine = 'deterministic';
+
+      if (engineMode === 'groq-llm' || engineMode === 'auto') {
+        try {
+          const formData = new FormData();
+          formData.append('text', pastedText);
+          formData.append('engineMode', 'groq-llm');
+
+          const res = await fetch('/api/parse-po', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (res.ok) {
+            const aiData = await res.json();
+            if (aiData.success && aiData.orders && aiData.orders.length > 0) {
+              orders = aiData.orders;
+              usedEngine = 'groq-llm';
+            }
+          }
+        } catch (llmErr) {
+          console.warn('Groq LLM text parsing fallback:', llmErr);
+        }
       }
 
-      const res = await fetch('/api/parse-po', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to parse text');
-      }
-
-      const orders: ParsedPurchaseOrder[] = data.orders;
       if (!orders || orders.length === 0) {
         throw new Error('No valid purchase orders found in pasted text.');
       }
 
       setParsedOrders(orders);
       setSelectedOrderIndex(0);
-      setSelectedMultiIndices(orders.map((_, idx) => idx));
-      setParsedMethod(data.parsedWith || 'engine');
+      setSelectedMultiIndices(orders.map((_item: ParsedPurchaseOrder, idx: number) => idx));
+      setParsedMethod(usedEngine);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -274,7 +263,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
           supplier_ref: order.orderNumber,
           terms_of_delivery: order.termsOfDelivery,
           place_of_supply: order.placeOfSupply,
-          notes: `Parsed automatically via AI Document Engine (${order.orderNumber})`,
+          notes: `Parsed via ${parsedMethod === 'groq-llm' ? 'Groq Open-Source LLM' : 'High-Precision Engine'} (${order.orderNumber})`,
         },
         order.items.map((it) => ({
           description: it.description,
@@ -344,7 +333,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
             supplier_ref: order.orderNumber,
             terms_of_delivery: order.termsOfDelivery,
             place_of_supply: order.placeOfSupply,
-            notes: `Parsed automatically via AI Document Engine (${order.orderNumber})`,
+            notes: `Parsed via ${parsedMethod === 'groq-llm' ? 'Groq Open-Source LLM' : 'High-Precision Engine'} (${order.orderNumber})`,
           },
           order.items.map((it) => ({
             description: it.description,
@@ -385,7 +374,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
       <div className="w-full max-w-4xl max-h-[92vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden flex flex-col my-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-slate-850/90">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-slate-850/90 gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20">
               <Sparkles className="h-5 w-5 animate-pulse" />
@@ -393,33 +382,62 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white">
-                  AI Purchase Order Reading Engine
+                  Purchase Order Reading Engine
                 </h2>
-                {geminiApiKey ? (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10.5px] font-bold flex items-center gap-1">
-                    <Zap className="h-3 w-3" /> Gemini 2.5 Flash Vision Active
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 text-[10.5px] font-bold">
-                    Multimodal Ready
-                  </span>
-                )}
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10.5px] font-bold flex items-center gap-1">
+                  <Zap className="h-3 w-3" /> Groq LLaMA Cloud Embedded
+                </span>
               </div>
               <p className="text-xs text-slate-400">
-                Template-Independent &bull; Multi-PO Splitting &bull; Native PDF & Image Vision &bull; 1-Click Billing
+                Template-Independent &bull; Multi-PO Splitting &bull; 1-Click Instant Billing
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowKeyInput(!showKeyInput)}
-              className="p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 transition flex items-center gap-1 text-xs"
-              title="Configure AI API Key"
-            >
-              <Key className="h-4 w-4 text-amber-400" />
-              <span className="hidden sm:inline">AI Key</span>
-            </button>
+          {/* Engine Selector */}
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <div className="flex p-1 bg-slate-900 rounded-xl border border-slate-800 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setEngineMode('auto')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                  engineMode === 'auto'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Smart Hybrid: In-browser ultra fast + Groq LLM"
+              >
+                <Zap className="h-3 w-3" />
+                <span>Auto</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEngineMode('groq-llm')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                  engineMode === 'groq-llm'
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Cloud Open-Source Groq LLM"
+              >
+                <Sparkles className="h-3 w-3" />
+                <span>Groq LLM</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEngineMode('deterministic')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                  engineMode === 'deterministic'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Precision Table Rule Engine"
+              >
+                <Cpu className="h-3 w-3" />
+                <span>Precision</span>
+              </button>
+            </div>
+
             <button
               onClick={onClose}
               className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
@@ -428,37 +446,6 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
             </button>
           </div>
         </div>
-
-        {/* API Key Drawer */}
-        {showKeyInput && (
-          <div className="p-4 bg-slate-950 border-b border-slate-800 space-y-3 animate-in slide-in-from-top duration-200">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-white flex items-center gap-1.5">
-                <Key className="h-4 w-4 text-amber-400" />
-                Google Gemini API Key (For 100% Template-Independent Multimodal Vision)
-              </span>
-              <span className="text-[11px] text-slate-400">
-                Stored safely in browser &bull; Free keys supported
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                placeholder="Paste your Gemini API Key (e.g. AIzaSy...)"
-                value={geminiApiKey}
-                onChange={(e) => setGeminiApiKey(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="button"
-                onClick={() => saveApiKey(geminiApiKey)}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition"
-              >
-                Save Key
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 text-xs text-slate-200">
@@ -514,7 +501,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                       Click or Drag & Drop any Purchase Order Document
                     </span>
                     <span className="text-xs text-slate-400 block mt-1">
-                      Works on <strong>ANY layout, font, or table structure</strong> &bull; Multi-Order PDFs &bull; Images (PNG/JPG/WEBP)
+                      Works on <strong>ANY layout, format, or multi-order file</strong> &bull; PDFs (50+ MB) &bull; Scans & Images
                     </span>
                   </div>
 
@@ -526,7 +513,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                       <ImageIcon className="h-3.5 w-3.5 text-emerald-400" /> Scans & Photos
                     </span>
                     <span className="flex items-center gap-1">
-                      <Layers className="h-3.5 w-3.5 text-purple-400" /> Multi-PO Ingestion
+                      <Layers className="h-3.5 w-3.5 text-purple-400" /> Multi-PO Splitting
                     </span>
                   </div>
                 </div>
@@ -548,28 +535,9 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                       className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
                     >
                       <Sparkles className="h-4 w-4" />
-                      <span>Parse Document with AI</span>
+                      <span>Parse Document</span>
                     </button>
                   </div>
-                </div>
-              )}
-
-              {/* Helpful Gemini API Notice if no key set */}
-              {!geminiApiKey && (
-                <div className="p-3.5 rounded-2xl bg-slate-850/60 border border-slate-800 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <Sparkles className="h-4 w-4 text-blue-400 shrink-0" />
-                    <span className="text-[11.5px] text-slate-300">
-                      Want 100% template-independent multimodal AI reading? Paste a <strong>Google Gemini API Key</strong> for instant vision extraction.
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowKeyInput(true)}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 font-bold text-xs shrink-0 transition"
-                  >
-                    Add API Key
-                  </button>
                 </div>
               )}
             </div>
@@ -581,10 +549,10 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
               <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
               <div>
                 <span className="font-bold text-white text-sm block">
-                  AI Multimodal Vision Engine Reading Document...
+                  Analyzing Document & Extracting Orders...
                 </span>
                 <span className="text-xs text-slate-400">
-                  Detecting order boundaries, parties, line items, rates, discounts, HSN codes, and delivery terms
+                  Detecting PO boundaries, parties, line items, rates, discounts, HSN codes, and delivery terms
                 </span>
               </div>
             </div>
@@ -608,9 +576,9 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
               <div className="flex items-center justify-between">
                 <span className="px-3 py-1 rounded-full bg-blue-600/15 border border-blue-500/30 text-blue-400 text-xs font-bold flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5" />
-                  {parsedMethod === 'gemini-vision'
-                    ? 'Extracted via Google Gemini 2.5 Flash Vision'
-                    : 'Extracted via AI Document Engine'}
+                  {parsedMethod === 'groq-llm'
+                    ? 'Extracted via Groq LLaMA Cloud AI'
+                    : 'Extracted via High-Precision Multi-Order Engine'}
                 </span>
                 <span className="text-xs text-slate-400">
                   Found <strong>{parsedOrders.length} Purchase Order(s)</strong>
@@ -647,7 +615,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1">
                     {parsedOrders.map((ord, idx) => {
                       const isSelected = selectedMultiIndices.includes(idx);
                       const isCurrent = selectedOrderIndex === idx;
@@ -663,7 +631,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                           }`}
                         >
                           <div>
-                            <span className="font-bold text-white block text-xs">{ord.orderNumber}</span>
+                            <span className="font-bold text-white block text-xs font-mono">{ord.orderNumber}</span>
                             <span className="text-[11px] text-slate-400 block truncate max-w-[160px]">
                               {ord.consigneeName}
                             </span>
