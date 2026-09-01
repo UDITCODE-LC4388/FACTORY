@@ -68,7 +68,7 @@ const INITIAL_FACTORY: Factory = {
   created_at: new Date().toISOString(),
 };
 
-// Seed Parties (Directory as single source of truth)
+// Seed Parties (Directory as single source of truth: Name, GSTIN, PAN, Address, State)
 const INITIAL_PARTIES: Party[] = [
   {
     id: '55555555-5555-5555-5555-555555555501',
@@ -81,10 +81,7 @@ const INITIAL_PARTIES: Party[] = [
     state: 'West Bengal',
     state_code: '19',
     address: '032,2nd NORTH ,SS HOG MARKET KOLKATA',
-    balance: 5250,
-    bank_name: 'HDFC BANK',
-    bank_account_no: '50200019284712',
-    bank_branch_ifsc: 'NEW MARKET KOLKATA & HDFC0000014',
+    balance: 0,
     created_at: new Date().toISOString(),
   },
   {
@@ -98,10 +95,7 @@ const INITIAL_PARTIES: Party[] = [
     state: 'Haryana',
     state_code: '06',
     address: 'KHEWAT/KHATA NO 721/789 AND 491/542\nMU.NO,57&58,VILLAGE PATHREDI,BILASPUR TAURU ROAD\nTEH MANESAR,DISTRICT-GURUGRAM,HARYANA-122413',
-    balance: 63554,
-    bank_name: 'ICICI BANK LTD',
-    bank_account_no: '000705018294',
-    bank_branch_ifsc: 'CONNAUGHT PLACE & ICIC0000007',
+    balance: 0,
     is_through_buyer_default: true,
     default_buyer_party_id: '55555555-5555-5555-5555-555555555504',
     created_at: new Date().toISOString(),
@@ -117,10 +111,7 @@ const INITIAL_PARTIES: Party[] = [
     state: 'West Bengal',
     state_code: '19',
     address: 'LOHARUKA ,INFRASTRUCTURE PRIVATE LIMITED\nKHATIAN NO 871 MOUZA-PANDIT SATHGHARA\nVILLAGE-SIMLA P.S -SHRIRAMPUR\nDIST HOOGHLY',
-    balance: 26565,
-    bank_name: 'STATE BANK OF INDIA',
-    bank_account_no: '38192019481',
-    bank_branch_ifsc: 'SHRIRAMPUR & SBIN0000182',
+    balance: 0,
     created_at: new Date().toISOString(),
   },
   {
@@ -135,9 +126,6 @@ const INITIAL_PARTIES: Party[] = [
     state_code: '07',
     address: '2285/9. GALI HINGA BAG. TILAK BAZAR\nDELHI-110006',
     balance: 0,
-    bank_name: 'AXIS BANK LTD',
-    bank_account_no: '918020049182741',
-    bank_branch_ifsc: 'CHANDNI CHOWK DELHI & UTIB0000032',
     created_at: new Date().toISOString(),
   },
 ];
@@ -339,7 +327,7 @@ interface FactoryContextType {
 
 const FactoryContext = createContext<FactoryContextType | null>(null);
 
-const STORAGE_KEY = 'factoryos_store_v9_clean_pipeline';
+const STORAGE_KEY = 'factoryos_store_v10_no_party_bank';
 const BROADCAST_CHANNEL_NAME = 'factoryos_realtime_bus';
 
 export function FactoryProvider({ children }: { children: React.ReactNode }) {

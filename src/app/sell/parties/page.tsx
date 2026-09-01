@@ -25,9 +25,6 @@ export default function PartiesPage() {
   const [pan, setPan] = useState('');
   const [stateName, setStateName] = useState('West Bengal');
   const [address, setAddress] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [bankAccountNo, setBankAccountNo] = useState('');
-  const [bankBranchIfsc, setBankBranchIfsc] = useState('');
 
   const filteredParties = parties.filter((p) => {
     const matchSearch =
@@ -55,9 +52,6 @@ export default function PartiesPage() {
       state_code: stateObj.code,
       address,
       balance: 0,
-      bank_name: bankName,
-      bank_account_no: bankAccountNo,
-      bank_branch_ifsc: bankBranchIfsc,
     });
 
     setIsModalOpen(false);
@@ -66,9 +60,6 @@ export default function PartiesPage() {
     setGstin('');
     setPan('');
     setAddress('');
-    setBankName('');
-    setBankAccountNo('');
-    setBankBranchIfsc('');
   };
 
   const canEdit = ['owner', 'master', 'accountant', 'purchase'].includes(currentProfile.role);
@@ -137,7 +128,7 @@ export default function PartiesPage() {
                 <th className="py-3.5 px-4">Type</th>
                 <th className="py-3.5 px-4">Contact & Location</th>
                 <th className="py-3.5 px-4">GSTIN / State</th>
-                <th className="py-3.5 px-4">PAN & Bank Details</th>
+                <th className="py-3.5 px-4">PAN / Tax ID</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -192,19 +183,12 @@ export default function PartiesPage() {
                   </td>
                   <td className="py-3.5 px-4 text-slate-300">
                     <div className="flex flex-col gap-0.5">
-                      <span className="font-mono text-[11px] text-slate-200">
+                      <span className="font-mono text-[11px] text-slate-200 font-semibold">
                         PAN: {party.pan || (party.gstin && party.gstin.length >= 12 ? party.gstin.substring(2, 12) : 'N/A')}
                       </span>
-                      {party.bank_name && (
-                        <span className="text-[10.5px] text-slate-400 font-mono truncate max-w-xs">
-                          {party.bank_name} {party.bank_account_no ? `• A/c: ${party.bank_account_no}` : ''}
-                        </span>
-                      )}
-                      {party.bank_branch_ifsc && (
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {party.bank_branch_ifsc}
-                        </span>
-                      )}
+                      <span className="text-[10.5px] text-slate-400 capitalize">
+                        {party.type} Profile
+                      </span>
                     </div>
                   </td>
                   <td className="py-3.5 px-4 text-right">
@@ -340,45 +324,6 @@ export default function PartiesPage() {
                   onChange={(e) => setAddress(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
-
-              {/* Bank Details */}
-              <div className="p-3 rounded-xl bg-slate-850/60 border border-slate-800 space-y-2.5">
-                <span className="font-bold text-[11px] text-slate-300 uppercase tracking-wider block">
-                  Party Bank Account Details (Optional)
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400">Bank Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. HDFC Bank"
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400">Account Number</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 50200019284712"
-                      value={bankAccountNo}
-                      onChange={(e) => setBankAccountNo(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400">Branch & IFSC</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. HOWRAH & HDFC0000014"
-                      value={bankBranchIfsc}
-                      onChange={(e) => setBankBranchIfsc(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs font-mono"
-                    />
-                  </div>
-                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
