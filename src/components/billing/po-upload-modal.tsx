@@ -360,6 +360,68 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
     }
   };
 
+  // Action: Ingest and save all selected POs into the Sale Orders Directory
+  const handleIngestAndListOrders = () => {
+    if (!parsedOrders || selectedMultiIndices.length === 0) return;
+
+    try {
+      selectedMultiIndices.forEach((idx) => {
+        const order = parsedOrders[idx];
+        if (!order) return;
+
+        const consigneeParty = ensurePartyExists(
+          order.consigneeName,
+          order.consigneeGstin,
+          order.consigneeAddress,
+          order.consigneeState,
+          order.consigneeStateCode,
+          order.consigneePan
+        );
+
+        let buyerParty: Party | undefined;
+        if (order.isThroughBuyer && order.buyerName) {
+          buyerParty = ensurePartyExists(
+            order.buyerName,
+            order.buyerGstin,
+            order.buyerAddress,
+            order.buyerState,
+            order.buyerStateCode,
+            order.buyerPan
+          );
+        }
+
+        createSaleOrder(
+          {
+            number: order.orderNumber,
+            party_id: consigneeParty.id,
+            buyer_party_id: order.isThroughBuyer && buyerParty ? buyerParty.id : undefined,
+            is_through_buyer: order.isThroughBuyer,
+            date: order.orderDate || new Date().toISOString().split('T')[0],
+            buyer_order_no: order.orderNumber,
+            buyer_order_date: order.orderDate,
+            supplier_ref: order.orderNumber,
+            terms_of_delivery: order.termsOfDelivery,
+            place_of_supply: order.placeOfSupply,
+            notes: `Ingested from PO Document (${order.orderNumber})`,
+          },
+          order.items.map((it) => ({
+            description: it.description,
+            hsn_code: it.hsn_code,
+            qty: it.qty,
+            unit_symbol: it.unit_symbol,
+            price: it.price,
+            discount_percent: it.discount_percent,
+            gst_percent: it.gst_percent,
+          }))
+        );
+      });
+
+      onClose();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const toggleMultiSelect = (idx: number) => {
     if (selectedMultiIndices.includes(idx)) {
       setSelectedMultiIndices(selectedMultiIndices.filter((i) => i !== idx));
@@ -382,14 +444,14 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white">
-                  Purchase Order Reading Engine
+                  Purchase Order Ingestion & Billing Engine
                 </h2>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10.5px] font-bold flex items-center gap-1">
                   <Zap className="h-3 w-3" /> Groq LLaMA Cloud Embedded
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Template-Independent &bull; Multi-PO Splitting &bull; 1-Click Instant Billing
+                Template-Independent &bull; Multi-PO Ingestion &bull; PO Listing &bull; 1-Click Billing
               </p>
             </div>
           </div>
@@ -513,7 +575,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                       <ImageIcon className="h-3.5 w-3.5 text-emerald-400" /> Scans & Photos
                     </span>
                     <span className="flex items-center gap-1">
-                      <Layers className="h-3.5 w-3.5 text-purple-400" /> Multi-PO Splitting
+                      <Layers className="h-3.5 w-3.5 text-purple-400" /> Multi-PO Ingestion
                     </span>
                   </div>
                 </div>
@@ -572,20 +634,31 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
           {/* Step 2: Parsed Multi-Order Results View */}
           {parsedOrders && parsedOrders.length > 0 && (
             <div className="space-y-6">
-              {/* Parsing Method Badge */}
-              <div className="flex items-center justify-between">
-                <span className="px-3 py-1 rounded-full bg-blue-600/15 border border-blue-500/30 text-blue-400 text-xs font-bold flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {parsedMethod === 'groq-llm'
-                    ? 'Extracted via Groq LLaMA Cloud AI'
-                    : 'Extracted via High-Precision Multi-Order Engine'}
-                </span>
-                <span className="text-xs text-slate-400">
-                  Found <strong>{parsedOrders.length} Purchase Order(s)</strong>
-                </span>
+              {/* Parsing Method Badge & Ingest All Action */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-850 border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full bg-blue-600/15 border border-blue-500/30 text-blue-400 text-xs font-bold flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {parsedMethod === 'groq-llm'
+                      ? 'Extracted via Groq LLaMA Cloud AI'
+                      : 'Extracted via High-Precision Multi-Order Engine'}
+                  </span>
+                  <span className="text-xs text-slate-300">
+                    Found <strong>{parsedOrders.length} Purchase Order(s)</strong>
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleIngestAndListOrders}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition self-start sm:self-auto"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>📥 Save & List All {selectedMultiIndices.length} POs in Directory</span>
+                </button>
               </div>
 
-              {/* Multi-Order Tabs Header if more than 1 order found */}
+              {/* Multi-Order Cards Header */}
               {parsedOrders.length > 1 && (
                 <div className="p-4 rounded-2xl bg-purple-950/30 border border-purple-800/40 space-y-3">
                   <div className="flex items-center justify-between">
@@ -596,7 +669,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                           Multi-Order Document Detected!
                         </span>
                         <span className="text-[11px] text-slate-300">
-                          Found <strong>{parsedOrders.length} separate orders</strong> in this file. Select which ones to bill:
+                          Found <strong>{parsedOrders.length} separate orders</strong> in this file. Select which ones to process:
                         </span>
                       </div>
                     </div>
@@ -806,36 +879,46 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                 </div>
 
                 {/* Submit Actions */}
-                <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2 border-t border-blue-800/40">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-blue-800/40">
                   <button
                     type="button"
-                    onClick={onClose}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                    onClick={handleIngestAndListOrders}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold transition flex items-center justify-center gap-1.5"
                   >
-                    Cancel
+                    <span>📥 Save to Orders Directory Only</span>
                   </button>
 
-                  {parsedOrders.length > 1 && selectedMultiIndices.length > 1 ? (
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
                       type="button"
-                      onClick={handleBillAllSelected}
-                      className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 transition"
+                      onClick={onClose}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
                     >
-                      <Sparkles className="h-4 w-4" />
-                      <span>⚡ Bill All {selectedMultiIndices.length} Selected Orders Now</span>
+                      Cancel
                     </button>
-                  ) : (
-                    currentOrder && (
+
+                    {parsedOrders.length > 1 && selectedMultiIndices.length > 1 ? (
                       <button
                         type="button"
-                        onClick={() => handleBillSingleOrder(currentOrder)}
-                        className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition"
+                        onClick={handleBillAllSelected}
+                        className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 transition"
                       >
                         <Sparkles className="h-4 w-4" />
-                        <span>⚡ Generate Tax Invoice & Print ({currentOrder.orderNumber})</span>
+                        <span>⚡ Bill All {selectedMultiIndices.length} Selected Now</span>
                       </button>
-                    )
-                  )}
+                    ) : (
+                      currentOrder && (
+                        <button
+                          type="button"
+                          onClick={() => handleBillSingleOrder(currentOrder)}
+                          className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition"
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          <span>⚡ Generate Tax Invoice & Print ({currentOrder.orderNumber})</span>
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -845,3 +928,4 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
     </div>
   );
 }
+
