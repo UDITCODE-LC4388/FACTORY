@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useFactory } from '@/lib/store/factory-store';
 import { ParsedPurchaseOrder } from '@/lib/po-parser';
 import { formatINR } from '@/lib/gst';
@@ -20,6 +20,9 @@ import {
   Eye,
   CheckSquare,
   Square,
+  Key,
+  Settings,
+  Zap,
 } from 'lucide-react';
 import { Invoice, Party } from '@/types/database.types';
 
@@ -40,8 +43,28 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
   const [billingDate, setBillingDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [pastedText, setPastedText] = useState<string>('');
   const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
+  const [parsedMethod, setParsedMethod] = useState<string>('');
+
+  // Gemini API Key State
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+  const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('factory_gemini_api_key') || '';
+      setGeminiApiKey(stored);
+    }
+  }, []);
+
+  const saveApiKey = (key: string) => {
+    setGeminiApiKey(key);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('factory_gemini_api_key', key.trim());
+    }
+    setShowKeyInput(false);
+  };
 
   if (!isOpen) return null;
 
@@ -55,10 +78,14 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
     setIsParsing(true);
     setError(null);
     setParsedOrders(null);
+    setParsedMethod('');
 
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (geminiApiKey.trim()) {
+        formData.append('apiKey', geminiApiKey.trim());
+      }
 
       const res = await fetch('/api/parse-po', {
         method: 'POST',
@@ -78,6 +105,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
       setParsedOrders(orders);
       setSelectedOrderIndex(0);
       setSelectedMultiIndices(orders.map((_, idx) => idx));
+      setParsedMethod(data.parsedWith || 'engine');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -94,10 +122,14 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
     setIsParsing(true);
     setError(null);
     setParsedOrders(null);
+    setParsedMethod('');
 
     try {
       const formData = new FormData();
       formData.append('text', pastedText);
+      if (geminiApiKey.trim()) {
+        formData.append('apiKey', geminiApiKey.trim());
+      }
 
       const res = await fetch('/api/parse-po', {
         method: 'POST',
@@ -117,6 +149,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
       setParsedOrders(orders);
       setSelectedOrderIndex(0);
       setSelectedMultiIndices(orders.map((_, idx) => idx));
+      setParsedMethod(data.parsedWith || 'engine');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -158,7 +191,6 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
   // Action: Bill Single Selected PO
   const handleBillSingleOrder = (order: ParsedPurchaseOrder) => {
     try {
-      // 1. Ensure Consignee Party
       const consigneeParty = ensurePartyExists(
         order.consigneeName,
         order.consigneeGstin,
@@ -168,7 +200,6 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
         order.consigneePan
       );
 
-      // 2. Ensure Buyer Party if through buyer
       let buyerParty: Party | undefined;
       if (order.isThroughBuyer && order.buyerName) {
         buyerParty = ensurePartyExists(
@@ -181,7 +212,6 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
         );
       }
 
-      // 3. Post Sale Order
       const newSO = createSaleOrder(
         {
           number: order.orderNumber,
@@ -194,7 +224,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
           supplier_ref: order.orderNumber,
           terms_of_delivery: order.termsOfDelivery,
           place_of_supply: order.placeOfSupply,
-          notes: `Parsed automatically from uploaded PO document (${order.orderNumber})`,
+          notes: `Parsed automatically via AI Document Engine (${order.orderNumber})`,
         },
         order.items.map((it) => ({
           description: it.description,
@@ -207,13 +237,12 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
         }))
       );
 
-      // 4. Simultaneously Convert to Tax Invoice with Entered Billing Date!
       const invoice = convertSaleOrderToInvoice(newSO.id, {
         date: billingDate || new Date().toISOString().split('T')[0],
       });
 
       if (onSuccess) {
-        onSuccess(invoice, true); // opens print preview
+        onSuccess(invoice, true);
       }
       onClose();
     } catch (err: unknown) {
@@ -265,7 +294,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
             supplier_ref: order.orderNumber,
             terms_of_delivery: order.termsOfDelivery,
             place_of_supply: order.placeOfSupply,
-            notes: `Parsed automatically from multi-order document (${order.orderNumber})`,
+            notes: `Parsed automatically via AI Document Engine (${order.orderNumber})`,
           },
           order.items.map((it) => ({
             description: it.description,
@@ -312,26 +341,78 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
               <Sparkles className="h-5 w-5 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                Sale Order Reading Engine & Instant Billing
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-white">
+                  AI Purchase Order Reading Engine
+                </h2>
+                {geminiApiKey ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10.5px] font-bold flex items-center gap-1">
+                    <Zap className="h-3 w-3" /> Gemini 2.5 Flash Vision Active
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 text-[10.5px] font-bold">
+                    Multimodal Ready
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
-                Upload PDF / Image (PNG/JPG) &bull; Multi-Order Extraction &bull; 1-Click Bill Generation
+                Template-Independent &bull; Multi-PO Splitting &bull; Native PDF & Image Vision &bull; 1-Click Billing
               </p>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowKeyInput(!showKeyInput)}
+              className="p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 transition flex items-center gap-1 text-xs"
+              title="Configure AI API Key"
+            >
+              <Key className="h-4 w-4 text-amber-400" />
+              <span className="hidden sm:inline">AI Key</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
+
+        {/* API Key Drawer */}
+        {showKeyInput && (
+          <div className="p-4 bg-slate-950 border-b border-slate-800 space-y-3 animate-in slide-in-from-top duration-200">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                <Key className="h-4 w-4 text-amber-400" />
+                Google Gemini API Key (For 100% Template-Independent Multimodal Vision)
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Stored safely in browser &bull; Free keys supported
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                placeholder="Paste your Gemini API Key (e.g. AIzaSy...)"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => saveApiKey(geminiApiKey)}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition"
+              >
+                Save Key
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 text-xs text-slate-200">
-          {/* Step 1: Upload / Input Tabs if no parsed orders yet or to upload another */}
+          {/* Step 1: Upload / Input Tabs if no parsed orders yet */}
           {!parsedOrders && (
             <div className="space-y-4">
               <div className="flex gap-2 p-1 bg-slate-850 rounded-xl w-fit border border-slate-800">
@@ -380,22 +461,22 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
 
                   <div>
                     <span className="font-bold text-sm sm:text-base text-white block">
-                      Click or Drag & Drop your PO Document
+                      Click or Drag & Drop any Purchase Order Document
                     </span>
                     <span className="text-xs text-slate-400 block mt-1">
-                      Supports <strong>PDFs (Single or Multi-Order)</strong> and <strong>Images (.PNG, .JPG, .WEBP)</strong>
+                      Works on <strong>ANY layout, font, or table structure</strong> &bull; Multi-Order PDFs &bull; Images (PNG/JPG/WEBP)
                     </span>
                   </div>
 
                   <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-2">
                     <span className="flex items-center gap-1">
-                      <FileText className="h-3.5 w-3.5 text-red-400" /> PDF Document
+                      <FileText className="h-3.5 w-3.5 text-red-400" /> Multi-Page PDF
                     </span>
                     <span className="flex items-center gap-1">
-                      <ImageIcon className="h-3.5 w-3.5 text-emerald-400" /> Image OCR
+                      <ImageIcon className="h-3.5 w-3.5 text-emerald-400" /> Scans & Photos
                     </span>
                     <span className="flex items-center gap-1">
-                      <Layers className="h-3.5 w-3.5 text-purple-400" /> Multi-Order Splitting
+                      <Layers className="h-3.5 w-3.5 text-purple-400" /> Multi-PO Ingestion
                     </span>
                   </div>
                 </div>
@@ -417,9 +498,28 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                       className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition"
                     >
                       <Sparkles className="h-4 w-4" />
-                      <span>Parse Document Text</span>
+                      <span>Parse Document with AI</span>
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Helpful Gemini API Notice if no key set */}
+              {!geminiApiKey && (
+                <div className="p-3.5 rounded-2xl bg-slate-850/60 border border-slate-800 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <Sparkles className="h-4 w-4 text-blue-400 shrink-0" />
+                    <span className="text-[11.5px] text-slate-300">
+                      Want 100% template-independent multimodal AI reading? Paste a <strong>Google Gemini API Key</strong> for instant vision extraction.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyInput(true)}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 font-bold text-xs shrink-0 transition"
+                  >
+                    Add API Key
+                  </button>
                 </div>
               )}
             </div>
@@ -430,9 +530,11 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
             <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
               <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
               <div>
-                <span className="font-bold text-white text-sm block">Reading & Parsing Document...</span>
+                <span className="font-bold text-white text-sm block">
+                  AI Multimodal Vision Engine Reading Document...
+                </span>
                 <span className="text-xs text-slate-400">
-                  Extracting parties, items, rates, discounts, HSN codes, and order references
+                  Detecting order boundaries, parties, line items, rates, discounts, HSN codes, and delivery terms
                 </span>
               </div>
             </div>
@@ -452,6 +554,19 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
           {/* Step 2: Parsed Multi-Order Results View */}
           {parsedOrders && parsedOrders.length > 0 && (
             <div className="space-y-6">
+              {/* Parsing Method Badge */}
+              <div className="flex items-center justify-between">
+                <span className="px-3 py-1 rounded-full bg-blue-600/15 border border-blue-500/30 text-blue-400 text-xs font-bold flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {parsedMethod === 'gemini-vision'
+                    ? 'Extracted via Google Gemini 2.5 Flash Vision'
+                    : 'Extracted via AI Document Engine'}
+                </span>
+                <span className="text-xs text-slate-400">
+                  Found <strong>{parsedOrders.length} Purchase Order(s)</strong>
+                </span>
+              </div>
+
               {/* Multi-Order Tabs Header if more than 1 order found */}
               {parsedOrders.length > 1 && (
                 <div className="p-4 rounded-2xl bg-purple-950/30 border border-purple-800/40 space-y-3">
@@ -572,7 +687,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                         {currentOrder.consigneeName}
                       </span>
                       <span className="text-[11px] text-slate-400 block mt-0.5">
-                        {currentOrder.consigneeAddress || 'Address extracted'}
+                        {currentOrder.consigneeAddress || 'Address on file'}
                       </span>
                       <span className="text-[10.5px] font-mono text-slate-300 block mt-1">
                         GSTIN: {currentOrder.consigneeGstin || 'UNREGISTERED'} &bull; {currentOrder.consigneeState} ({currentOrder.consigneeStateCode})
@@ -590,7 +705,7 @@ export function POUploadModal({ isOpen, onClose, onSuccess }: POUploadModalProps
                             {currentOrder.buyerName}
                           </span>
                           <span className="text-[11px] text-slate-400 block mt-0.5">
-                            {currentOrder.buyerAddress || 'Address extracted'}
+                            {currentOrder.buyerAddress || 'Address on file'}
                           </span>
                           <span className="text-[10.5px] font-mono text-slate-300 block mt-1">
                             GSTIN: {currentOrder.buyerGstin || 'UNREGISTERED'} &bull; {currentOrder.buyerState} ({currentOrder.buyerStateCode})
