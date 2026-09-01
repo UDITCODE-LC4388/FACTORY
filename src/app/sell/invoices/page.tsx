@@ -30,6 +30,8 @@ import { WhatsAppTemplates } from '@/lib/whatsapp';
 import { TaxInvoiceTemplate } from '@/components/billing/tax-invoice-template';
 import { CreateInvoiceModal } from '@/components/billing/create-invoice-modal';
 import { POUploadModal } from '@/components/billing/po-upload-modal';
+import { ASNGeneratorModal } from '@/components/billing/asn-generator-modal';
+import Link from 'next/link';
 
 export default function InvoicesPage() {
   const {
@@ -45,6 +47,7 @@ export default function InvoicesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [supplyFilter, setSupplyFilter] = useState<'all' | 'direct' | 'through_buyer'>('all');
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [asnModalInvoice, setAsnModalInvoice] = useState<Invoice | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isPOUploadModalOpen, setIsPOUploadModalOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -117,6 +120,13 @@ export default function InvoicesPage() {
 
         {canEdit && (
           <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <Link
+              href="/asn"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-purple-600/30 transition"
+            >
+              <Truck className="h-4 w-4" />
+              <span>ASN Generator (.DOCX)</span>
+            </Link>
             <button
               onClick={() => setIsPOUploadModalOpen(true)}
               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition"
@@ -265,6 +275,13 @@ export default function InvoicesPage() {
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
+                            onClick={() => setAsnModalInvoice(inv)}
+                            className="p-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-400 hover:text-white border border-purple-500/30 transition"
+                            title="Generate ASN (.DOCX Shipping Document)"
+                          >
+                            <Truck className="h-3.5 w-3.5" />
+                          </button>
+                          <button
                             onClick={() => setPreviewInvoice(inv)}
                             className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 transition"
                             title="Print / Preview Tax Invoice (Exact Template)"
@@ -412,6 +429,17 @@ export default function InvoicesPage() {
           defaultMessage={whatsAppModalData.message}
           refTable="invoices"
           refId={whatsAppModalData.invoiceId}
+        />
+      )}
+
+      {/* Modal 6: ASN (.DOCX) Generator Modal */}
+      {asnModalInvoice && (
+        <ASNGeneratorModal
+          isOpen={!!asnModalInvoice}
+          onClose={() => setAsnModalInvoice(null)}
+          invoice={asnModalInvoice}
+          factory={factory}
+          parties={parties}
         />
       )}
     </div>

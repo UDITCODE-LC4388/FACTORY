@@ -66,6 +66,18 @@ export function Sidebar() {
       ],
     },
     {
+      title: 'Shipping & ASN',
+      items: [
+        {
+          label: 'ASN Generator (Bill to Docx)',
+          href: '/asn',
+          icon: Truck,
+          badge: 'Docx',
+          roles: ['owner', 'master', 'accountant', 'supervisor', 'inventory_manager', 'helper', 'purchase'],
+        },
+      ],
+    },
+    {
       title: 'Make (Production Floor)',
       items: [
         {
@@ -290,6 +302,8 @@ export function Sidebar() {
                           className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
                             isActive
                               ? 'bg-white/20 text-white'
+                              : item.badge === 'Docx'
+                              ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20'
                               : 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400'
                           }`}
                         >
