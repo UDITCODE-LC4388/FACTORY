@@ -39,9 +39,7 @@ export default function DashboardPage() {
     .filter((t) => t.status === 'awaiting_receive');
   const inTransitPieces = pendingTransfers.reduce((sum, t) => sum + t.sent_qty, 0);
 
-  const totalReceivables = invoices
-    .filter((i) => i.payment_status !== 'paid')
-    .reduce((sum, i) => sum + (i.total - (i.paid_amount || 0)), 0);
+  const totalInvoiced = invoices.reduce((sum, i) => sum + i.total, 0);
 
   const lowStockMaterials = materials.filter(
     (m) => m.qty_on_hand <= m.low_stock_threshold
@@ -142,11 +140,11 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Pending Receivables */}
+        {/* Total Invoiced */}
         <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-              Pending Receivables
+              Total Invoiced (Billed)
             </span>
             <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400">
               <TrendingUp className="h-4 w-4" />
@@ -154,11 +152,11 @@ export default function DashboardPage() {
           </div>
           <div className="mt-3">
             <span className="text-2xl font-bold text-emerald-400 tracking-tight">
-              {formatINR(totalReceivables)}
+              {formatINR(totalInvoiced)}
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            From {invoices.filter((i) => i.payment_status !== 'paid').length} open invoices
+            Across {invoices.length} generated tax invoices
           </p>
         </div>
 

@@ -39,7 +39,7 @@ export const WhatsAppTemplates = {
     totalAmount: string;
     factoryName: string;
     date: string;
-    paymentStatus: string;
+    paymentStatus?: string;
   }) => {
     return (
       `*GST TAX INVOICE* — ${params.factoryName}\n\n` +
@@ -47,8 +47,7 @@ export const WhatsAppTemplates = {
       `Your Tax Invoice *#${params.invoiceNo}* has been generated.\n\n` +
       `📄 *Invoice No:* ${params.invoiceNo}\n` +
       `📅 *Date:* ${params.date}\n` +
-      `💰 *Total Amount:* ₹${params.totalAmount}\n` +
-      `💳 *Payment Status:* ${params.paymentStatus.toUpperCase()}\n\n` +
+      `💰 *Total Amount:* ₹${params.totalAmount}\n\n` +
       `Thank you for doing business with *${params.factoryName}*!`
     );
   },

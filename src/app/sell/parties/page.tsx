@@ -25,7 +25,6 @@ export default function PartiesPage() {
   const [pan, setPan] = useState('');
   const [stateName, setStateName] = useState('West Bengal');
   const [address, setAddress] = useState('');
-  const [openingBalance, setOpeningBalance] = useState('');
   const [bankName, setBankName] = useState('');
   const [bankAccountNo, setBankAccountNo] = useState('');
   const [bankBranchIfsc, setBankBranchIfsc] = useState('');
@@ -55,7 +54,7 @@ export default function PartiesPage() {
       state: stateObj.name,
       state_code: stateObj.code,
       address,
-      balance: Number(openingBalance) || 0,
+      balance: 0,
       bank_name: bankName,
       bank_account_no: bankAccountNo,
       bank_branch_ifsc: bankBranchIfsc,
@@ -67,7 +66,6 @@ export default function PartiesPage() {
     setGstin('');
     setPan('');
     setAddress('');
-    setOpeningBalance('');
     setBankName('');
     setBankAccountNo('');
     setBankBranchIfsc('');
@@ -139,7 +137,7 @@ export default function PartiesPage() {
                 <th className="py-3.5 px-4">Type</th>
                 <th className="py-3.5 px-4">Contact & Location</th>
                 <th className="py-3.5 px-4">GSTIN / State</th>
-                <th className="py-3.5 px-4 text-right">Outstanding Balance</th>
+                <th className="py-3.5 px-4">PAN & Bank Details</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -187,31 +185,26 @@ export default function PartiesPage() {
                     </div>
                   </td>
                   <td className="py-3.5 px-4 text-slate-300">
-                    <span className="font-mono text-[11px] font-semibold">
+                    <span className="font-mono text-[11px] font-semibold text-cyan-400">
                       {party.gstin || 'UNREGISTERED'}
                     </span>
                     <p className="text-[10px] text-slate-400">State Code: {party.state_code}</p>
                   </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <div>
-                      <span
-                        className={`font-bold ${
-                          party.balance > 0
-                            ? 'text-emerald-400'
-                            : party.balance < 0
-                            ? 'text-rose-400'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {formatINR(Math.abs(party.balance))}
+                  <td className="py-3.5 px-4 text-slate-300">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-mono text-[11px] text-slate-200">
+                        PAN: {party.pan || (party.gstin && party.gstin.length >= 12 ? party.gstin.substring(2, 12) : 'N/A')}
                       </span>
-                      <p className="text-[10px] text-slate-500">
-                        {party.balance > 0
-                          ? '(Receivable)'
-                          : party.balance < 0
-                          ? '(Payable)'
-                          : 'Settled'}
-                      </p>
+                      {party.bank_name && (
+                        <span className="text-[10.5px] text-slate-400 font-mono truncate max-w-xs">
+                          {party.bank_name} {party.bank_account_no ? `• A/c: ${party.bank_account_no}` : ''}
+                        </span>
+                      )}
+                      {party.bank_branch_ifsc && (
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {party.bank_branch_ifsc}
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="py-3.5 px-4 text-right">
@@ -386,18 +379,6 @@ export default function PartiesPage() {
                     />
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Opening Balance (₹)</label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  value={openingBalance}
-                  onChange={(e) => setOpeningBalance(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="text-[10px] text-slate-500">Positive for Customer Receivable, Negative for Vendor Payable</p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
